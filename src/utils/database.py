@@ -15,7 +15,7 @@ import json
 # a melhor prática é usar o caminho absoluto a partir da raiz do projeto.
 # O problema real é que o Python pode não estar vendo 'src' como um pacote.
 # Vamos tentar uma importação relativa primeiro, que é mais robusta.
-from .config import get_secret, IS_RUNNING_ON_STREAMLIT_CLOUD
+from config import get_secret, IS_RUNNING_ON_STREAMLIT_CLOUD
 
 class Database:
     # ... (o resto do arquivo permanece o mesmo) ...
