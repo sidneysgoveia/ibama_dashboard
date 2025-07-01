@@ -1,10 +1,11 @@
-# app.py
-
 import streamlit as st
 import pandas as pd
+import os
 
 # Importa os componentes do projeto
 from src.utils.database import Database
+# O DataLoader não é mais estritamente necessário no fluxo principal do app,
+# mas podemos mantê-lo para o botão de atualização, se desejado.
 from src.utils.data_loader import DataLoader
 from src.utils.llm_integration import LLMIntegration
 from src.components.visualization import DataVisualization
@@ -16,43 +17,48 @@ def main():
     st.title("🌳 Análise de Autos de Infração do IBAMA")
     
     # Inicializa os componentes principais
+    # O Database agora se conecta ao Supabase em produção ou DuckDB localmente
     db = Database()
-    data_loader = DataLoader(database=db)
     llm = LLMIntegration(database=db)
     viz = DataVisualization(database=db)
     chatbot = Chatbot(llm_integration=llm)
     chatbot.initialize_chat_state()
-    
-    # --- BARRA LATERAL (SIDEBAR) APRIMORADA ---
+
+    # A lógica de verificação e download inicial foi removida,
+    # pois o app agora lê de um banco de dados persistente.
+
+    # --- BARRA LATERAL (SIDEBAR) ---
     with st.sidebar:
         st.header("🔎 Filtros do Dashboard")
 
+        # Os filtros agora são criados diretamente.
+        # Adicionamos um bloco try-except para lidar com o caso de o banco de dados
+        # estar temporariamente indisponível na primeira carga.
         try:
-            ufs_list = db.execute_query("SELECT DISTINCT UF FROM ibama_infracao WHERE UF IS NOT NULL ORDER BY UF")['UF'].tolist()
+            ufs_list = db.execute_query("SELECT DISTINCT \"UF\" FROM ibama_infracao WHERE \"UF\" IS NOT NULL ORDER BY \"UF\"")['UF'].tolist()
             selected_ufs = st.multiselect("Selecione o Estado (UF)", options=ufs_list, default=[])
 
-            years_df = db.execute_query("SELECT DISTINCT EXTRACT(YEAR FROM TRY_CAST(DAT_HORA_AUTO_INFRACAO AS TIMESTAMP)) as ano FROM ibama_infracao WHERE ano IS NOT NULL ORDER BY ano DESC")
-            years_list = [int(y) for y in years_df['ano'].tolist()]
+            # Nota: Queries SQL no Supabase podem exigir aspas duplas em nomes de colunas se eles foram criados com letras maiúsculas.
+            years_df = db.execute_query("SELECT DISTINCT EXTRACT(YEAR FROM TRY_CAST(\"DAT_HORA_AUTO_INFRACAO\" AS TIMESTAMP)) as ano FROM ibama_infracao WHERE ano IS NOT NULL ORDER BY ano DESC")
+            years_list = [int(y) for y in years_df['ano'].dropna().tolist()]
             if years_list:
                 min_year, max_year = min(years_list), max(years_list)
                 year_range = st.slider("Selecione o Intervalo de Anos", min_year, max_year, (min_year, max_year))
             else:
-                year_range = None
+                year_range = (2024, 2025) # Fallback
         except Exception as e:
-            st.error("Erro ao carregar filtros.")
+            st.error(f"Erro ao carregar filtros: {e}. Verifique a conexão com o banco de dados.")
             selected_ufs = []
-            year_range = None
+            year_range = (2024, 2025)
 
         st.divider()
-        if st.button("🔄 Atualizar Dados Agora"):
-            with st.spinner("Atualizando dados..."):
-                data_loader.download_and_process()
-                st.success("Dados atualizados!")
-                st.rerun()
+        
+        # O botão de atualização manual foi removido para o usuário final.
+        # A atualização agora é um processo de backend.
+        st.info("Os dados são atualizados periodicamente pela equipe de administração.")
         
         chatbot.display_sample_questions()
 
-        # --- ALTERAÇÃO AQUI: Adicionando as informações auxiliares ---
         st.divider()
         with st.expander("⚠️ Avisos Importantes"):
             st.warning(
@@ -77,7 +83,7 @@ def main():
                 """
             )
 
-    # ... (o resto do app.py permanece o mesmo) ...
+    # --- CONTEÚDO PRINCIPAL COM ABAS ---
     tab1, tab2, tab3 = st.tabs(["📊 Dashboard Interativo", "💬 Chatbot com IA", "🔍 Explorador SQL"])
     
     with tab1:
