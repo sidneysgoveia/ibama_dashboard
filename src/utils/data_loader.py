@@ -3,12 +3,10 @@ import zipfile
 import pandas as pd
 import io
 from pathlib import Path
-
-# A URL agora será passada pelo script de upload, então o decouple não é mais necessário aqui.
+import urllib3 # Importa a biblioteca para gerenciar avisos
 
 class DataLoader:
     def __init__(self, database=None):
-        # A URL será definida externamente
         self.zip_url = None 
         self.database = database
         self.data_dir = Path("data")
@@ -23,22 +21,18 @@ class DataLoader:
         try:
             print("Baixando dados do IBAMA...")
             
-            # --- ALTERAÇÃO AQUI: Adicionando verify=False ---
-            # Isso instrui o requests a não verificar o certificado SSL do servidor.
+            # --- ALTERAÇÃO AQUI: Simplificando a supressão de avisos ---
+            # Desabilita os avisos de requisição insegura ANTES de fazer a chamada.
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            print("Aviso: A verificação do certificado SSL será desabilitada para este download.")
+
+            # Faz a chamada com verify=False
             response = requests.get(self.zip_url, timeout=60, verify=False)
             
-            # Adiciona um aviso sobre a verificação SSL desabilitada
-            if not response.request.verify:
-                import urllib3
-                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-                print("Aviso: A verificação do certificado SSL foi desabilitada para este download.")
-
             response.raise_for_status() # Lança um erro para status HTTP ruins (4xx ou 5xx)
                 
-            # Extrair apenas arquivos necessários
+            # Extrair todos os arquivos CSV do ZIP
             z = zipfile.ZipFile(io.BytesIO(response.content))
-            
-            # Vamos ser mais flexíveis e pegar qualquer arquivo CSV do ZIP
             csv_files = [f for f in z.namelist() if f.lower().endswith('.csv')]
             
             if not csv_files:
@@ -51,14 +45,12 @@ class DataLoader:
                 print(f"Processando {filename}...")
                 try:
                     with z.open(filename) as f:
-                        # Tenta ler com UTF-8 primeiro, que é mais moderno. Se falhar, usa latin-1.
                         try:
-                            df = pd.read_csv(f, encoding='utf-8', sep=';', on_bad_lines='skip')
+                            df = pd.read_csv(f, encoding='utf-8', sep=';', on_bad_lines='skip', low_memory=False)
                         except UnicodeDecodeError:
                             print(f"  Falha com UTF-8, tentando com latin-1...")
-                            # Precisamos reabrir o arquivo, pois ele foi consumido
                             with z.open(filename) as f_latin:
-                                df = pd.read_csv(f_latin, encoding='latin1', sep=';', on_bad_lines='skip')
+                                df = pd.read_csv(f_latin, encoding='latin1', sep=';', on_bad_lines='skip', low_memory=False)
                         all_data.append(df)
                 except Exception as e:
                     print(f"  Erro ao processar o arquivo {filename}: {e}")
@@ -67,11 +59,9 @@ class DataLoader:
                 print("Nenhum dado pôde ser extraído dos arquivos CSV.")
                 return False
                 
-            # Combinar dados
             combined_df = pd.concat(all_data, ignore_index=True)
             print(f"Total de registros combinados: {len(combined_df)}")
             
-            # Salvar no banco
             if self.database:
                 self.database.save_dataframe(combined_df, "ibama_infracao")
                 
