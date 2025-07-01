@@ -6,6 +6,8 @@ import google.generativeai as genai
 from decouple import config
 import pandas as pd
 
+from config import get_secret
+
 # Importa a ferramenta de busca que usa a API da Serper
 from src.utils.tools import search_internet
 
