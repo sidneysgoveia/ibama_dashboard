@@ -1,10 +1,9 @@
-# src/utils/tools.py
-
 import os
 import json
 import requests
-from decouple import config
-from config import get_secret
+
+# Importa o módulo de configuração que está na raiz do projeto
+import config
 
 def search_internet(query: str) -> str:
     """
@@ -18,15 +17,16 @@ def search_internet(query: str) -> str:
     """
     print(f"🔎 Realizando busca na internet (Serper/requests) por: '{query}'")
     
-    serper_api_key = config('SERPER_API_KEY', default=None)
+    # Lê a chave da API a partir do módulo de configuração
+    serper_api_key = config.get_secret('SUPABASE_KEY', default=None)
     if not serper_api_key:
-        print("❌ Erro: Chave da API da Serper não encontrada no .env")
+        print("❌ Erro: Chave da API da Serper não encontrada.")
         return json.dumps({"error": "A chave da API da Serper não está configurada."})
 
     # Endpoint da API da Serper
     url = "https://google.serper.dev/search"
 
-    # Payload da requisição
+    # Payload da requisição, incluindo a query e parâmetros de localização
     payload = json.dumps({
         "q": query,
         "gl": "br",
@@ -45,22 +45,23 @@ def search_internet(query: str) -> str:
 
         results = response.json()
         
-        # Adicionando log para ver a resposta completa da API
+        # Log da resposta completa para facilitar a depuração
         print(f"📄 Resposta da API Serper: {json.dumps(results, indent=2, ensure_ascii=False)}")
 
+        # Processa os resultados para extrair as informações mais úteis
         if "organic" in results and results["organic"]:
-            # Extrai os snippets mais relevantes
+            # Extrai os snippets dos 3 primeiros resultados orgânicos
             snippets = [
                 {
                     "title": r.get("title"),
                     "snippet": r.get("snippet", "N/A"),
                     "link": r.get("link")
                 }
-                for r in results["organic"][:3] # Pega os 3 primeiros resultados
+                for r in results["organic"][:3]
             ]
             return json.dumps(snippets, ensure_ascii=False)
         elif "answerBox" in results:
-             # Se houver uma "caixa de resposta" direta
+             # Se houver uma "caixa de resposta" direta, usa essa informação
             answer_box = results["answerBox"]
             return json.dumps([{"title": answer_box.get("title"), "snippet": answer_box.get("snippet") or answer_box.get("answer")}], ensure_ascii=False)
         else:
