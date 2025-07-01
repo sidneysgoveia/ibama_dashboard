@@ -3,33 +3,39 @@ import json
 from typing import Dict, Any, Optional, Literal
 from openai import OpenAI
 import google.generativeai as genai
-from decouple import config
 import pandas as pd
 
-from config import get_secret
-
-# Importa a ferramenta de busca que usa a API da Serper
+# Importa o módulo de configuração da raiz e a ferramenta de busca
+import config
 from src.utils.tools import search_internet
 
 class LLMIntegration:
-    # ... (todo o início da classe permanece o mesmo) ...
+    """
+    Classe que funciona como um agente de IA, capaz de interagir com um banco de dados
+    e realizar buscas na internet para responder perguntas. Suporta múltiplos
+    provedores de LLM (Groq/Llama e Google/Gemini).
+    """
     def __init__(self, database=None):
+        """Inicializa o agente com acesso ao banco de dados e configura os clientes de LLM."""
         self.database = database
         self.groq_client = None
         self.gemini_model = None
         self.groq_model_name = "llama-3.3-70b-versatile"
         self.gemini_model_name = "gemini-1.5-pro"
 
-        groq_api_key = config('GROQ_API_KEY')
+        # Configura o cliente Groq (Llama)
+        groq_api_key = config.get_secret('GROQ_API_KEY')
         if groq_api_key:
             self.groq_client = OpenAI(api_key=groq_api_key, base_url="https://api.groq.com/openai/v1")
 
-        google_api_key = config('GOOGLE_API_KEY')
+        # Configura o cliente Google (Gemini)
+        google_api_key = config.get_secret('GOOGLE_API_KEY')
         if google_api_key:
             genai.configure(api_key=google_api_key)
             self.gemini_model = genai.GenerativeModel(model_name=self.gemini_model_name)
 
     def _get_system_prompt(self) -> str:
+        """Gera o prompt do sistema com o esquema do banco para dar contexto ao LLM."""
         try:
             schema_df = self.database.get_table_info()
             schema_str = "\n".join([f"- {row['name']} ({row['type']})" for _, row in schema_df.iterrows()])
@@ -43,6 +49,9 @@ class LLMIntegration:
         """
 
     def _decide_tool(self, question: str) -> Literal['database', 'internet']:
+        """
+        Decide qual ferramenta usar com base em uma heurística de palavras-chave aprimorada.
+        """
         question_lower = question.lower()
         
         web_keywords = [
@@ -50,15 +59,19 @@ class LLMIntegration:
             "contato", "história", "quem é o presidente", "localização", "site"
         ]
         if any(keyword in question_lower for keyword in web_keywords):
+            print("Decisão: Palavra-chave de busca web encontrada.")
             return 'internet'
 
         db_keywords = ["mostre", "liste", "quais são", "infrações", "multas", "autos de infração", "relatório"]
         if "cnpj" in question_lower and not any(keyword in question_lower for keyword in db_keywords):
+            print("Decisão: Pergunta sobre CNPJ, parece ser uma busca de informações.")
             return 'internet'
 
+        print("Decisão: Padrão, usando banco de dados.")
         return 'database'
 
     def _generate_final_answer_from_text(self, context: str, question: str, provider: str) -> str:
+        """Usa o LLM para gerar uma resposta final a partir de um contexto de texto."""
         prompt = f"Com base no seguinte contexto, responda à pergunta do usuário de forma clara e concisa.\n\nContexto:\n{context}\n\nPergunta do Usuário:\n{question}"
         
         if provider == 'gemini' and self.gemini_model:
@@ -74,6 +87,7 @@ class LLMIntegration:
         return "Provedor de LLM não configurado."
 
     def query(self, question: str, provider: Literal['groq', 'gemini']) -> Dict[str, Any]:
+        """Orquestra o processo completo: decide a ferramenta, a executa e formata a resposta."""
         if (provider == 'groq' and not self.groq_client) or (provider == 'gemini' and not self.gemini_model):
             return {"answer": f"Provedor '{provider}' não configurado. Verifique suas chaves de API.", "source": "error"}
 
@@ -95,11 +109,7 @@ class LLMIntegration:
                 
                 if db_results.empty:
                     print("⚠️ Consulta inicial não retornou resultados. Tentando uma consulta de fallback mais ampla...")
-                    
-                    main_keyword = None
-                    if 'fauna' in question.lower(): main_keyword = 'fauna'
-                    elif 'flora' in question.lower(): main_keyword = 'flora'
-                    elif 'pesca' in question.lower(): main_keyword = 'pesca'
+                    main_keyword = next((kw for kw in ['fauna', 'flora', 'pesca'] if kw in question.lower()), None)
                     
                     if main_keyword:
                         fallback_sql = f"SELECT NOME_INFRATOR, CPF_CNPJ_INFRATOR, TIPO_INFRACAO, DES_INFRACAO FROM ibama_infracao WHERE LOWER(TIPO_INFRACAO) = '{main_keyword}' LIMIT 5"
@@ -123,6 +133,7 @@ class LLMIntegration:
             return {"answer": f"Ocorreu um erro inesperado: {str(e)}", "source": "error"}
 
     def generate_sql(self, question: str, provider: str) -> Optional[str]:
+        """Gera SQL a partir de uma pergunta, usando um prompt robusto para guiar o LLM."""
         print("Gerando SQL com LLM...")
         
         prompt = f"""
@@ -163,14 +174,10 @@ class LLMIntegration:
         """Corrige problemas comuns de codificação de caracteres."""
         if not isinstance(text, str):
             return text
-        # Mapeamento dos erros de encoding mais comuns
         replacements = {
-            'Ã§': 'ç', 'Ã‡': 'Ç',
-            'Ã£': 'ã', 'Ãµ': 'õ',
-            'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú',
-            'Ã¢': 'â', 'Ãª': 'ê', 'Ã´': 'ô',
-            'Ã ': 'à',
-            'Âº': 'º', 'Âª': 'ª'
+            'Ã§': 'ç', 'Ã‡': 'Ç', 'Ã£': 'ã', 'Ãµ': 'õ', 'Ã¡': 'á', 'Ã©': 'é', 
+            'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 'Ã¢': 'â', 'Ãª': 'ê', 'Ã´': 'ô',
+            'Ã ': 'à', 'Âº': 'º', 'Âª': 'ª'
         }
         for bad, good in replacements.items():
             text = text.replace(bad, good)
@@ -178,7 +185,6 @@ class LLMIntegration:
 
     def _format_results(self, question: str, results: pd.DataFrame) -> str:
         """Formata os resultados de uma consulta SQL em uma resposta de texto amigável."""
-        # --- ALTERAÇÃO AQUI: Aplica a correção de encoding em todas as colunas de texto ---
         for col in results.select_dtypes(include=['object']).columns:
             results[col] = results[col].apply(self._fix_encoding)
 
