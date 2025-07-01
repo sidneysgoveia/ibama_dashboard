@@ -20,7 +20,7 @@ supabase_key = os.getenv("SUPABASE_KEY")
 ibama_zip_url = os.getenv("IBAMA_ZIP_URL", 'https://dadosabertos.ibama.gov.br/dados/SIFISC/auto_infracao/auto_infracao/auto_infracao_csv.zip')
 
 if not supabase_url or not supabase_key:
-    raise ValueError("As variáveis de ambiente SUPABASE_URL e SUPABASE_SERVICE_KEY precisam ser definidas.")
+    raise ValueError("As variáveis de ambiente SUPABASE_URL e SUPABASE_KEY precisam ser definidas.")
 
 # Usamos um DuckDB temporário em memória para o processamento inicial
 temp_db = Database() 
