@@ -13,6 +13,7 @@ duckduckgo-search==6.1.8
 # Environment & HTTP
 python-dotenv==1.0.1
 requests==2.32.3
+python-decouple==3.8
 
 # Scheduling
 APScheduler==3.11.0
