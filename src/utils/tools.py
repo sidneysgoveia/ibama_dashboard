@@ -4,6 +4,7 @@ import os
 import json
 import requests
 from decouple import config
+from config import get_secret
 
 def search_internet(query: str) -> str:
     """
