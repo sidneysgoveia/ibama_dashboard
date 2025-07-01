@@ -34,6 +34,10 @@ SERPER_API_KEY = get_secret('SERPER_API_KEY') # Adicionando a chave da Serper
 # O caminho do banco de dados pode ser fixo, pois ele será criado no ambiente de execução
 DB_PATH = get_secret('DB_PATH', default='data/ibama_infracao.db')
 
+# Supabase Credentials
+SUPABASE_URL = get_secret('SUPABASE_URL')
+SUPABASE_KEY = get_secret('SUPABASE_KEY')
+
 # Data Sources
 # A URL dos dados pode ser fixa, mas é bom mantê-la configurável
 IBAMA_ZIP_URL = get_secret(
