@@ -6,6 +6,7 @@ from pathlib import Path
 import os
 import streamlit as st
 from supabase import create_client, Client
+import json
 
 # Importa a função de config.py
 from src.utils.config import get_secret, IS_RUNNING_ON_STREAMLIT_CLOUD
@@ -19,7 +20,7 @@ class Database:
         if self.is_cloud:
             # Configuração para o Supabase (produção)
             url = get_secret("SUPABASE_URL")
-            key = get_secret("SUPABASE_KEY") # Usamos a service key para ler
+            key = get_secret("SUPABASE_KEY")
             if url and key:
                 self.supabase_client = create_client(url, key)
             else:
@@ -35,33 +36,33 @@ class Database:
         print(f"Executando query no ambiente {'Cloud (Supabase)' if self.is_cloud else 'Local (DuckDB)'}...")
         try:
             if self.is_cloud and self.supabase_client:
-                # Supabase não executa SQL diretamente via API de tabela.
-                # Precisamos traduzir a consulta para o construtor de queries do Supabase.
-                # Para SELECT simples, podemos usar a API. Para queries complexas,
-                # o ideal é criar uma "Database Function" no Supabase.
-                
-                # Simplificação para este exemplo:
-                # Para queries complexas, o Supabase permite chamar Funções PostgreSQL.
-                # Vamos assumir que a maioria das nossas queries são SELECT * ou SELECT com filtros simples.
-                # Esta é a parte mais complexa da migração.
-                
-                # Exemplo para uma query simples: "SELECT DISTINCT UF FROM ibama_infracao"
-                if "SELECT DISTINCT UF FROM ibama_infracao" in query:
-                    response = self.supabase_client.table('ibama_infracao').select('UF', count='exact').execute()
-                    df = pd.DataFrame(response.data)
-                    return df.drop_duplicates(subset=['UF'])
-                
-                # Para outras queries, precisaríamos de uma tradução mais complexa ou de Funções no Supabase.
-                # Por enquanto, vamos usar um fallback para DuckDB em memória se a query for complexa.
-                # Esta não é a solução ideal, mas funciona como um paliativo.
-                st.warning("Queries complexas no Supabase ainda não implementadas. Usando DuckDB em memória.")
-                return pd.DataFrame() # Retorna vazio para evitar erros
+                # --- ALTERAÇÃO AQUI: Chamando a função do banco de dados ---
+                # Usamos rpc() para chamar a função 'execute_secure_select' que criamos.
+                # Passamos a query SQL como um argumento no dicionário.
+                response = self.supabase_client.rpc(
+                    'execute_secure_select',
+                    {'query_string': query}
+                ).execute()
+
+                # A resposta vem em response.data, que é uma lista.
+                # O primeiro item da lista contém nosso JSON de resultado.
+                if response.data and response.data[0]['result_json']:
+                    # Carregamos o JSON em um DataFrame do Pandas.
+                    result_data = response.data[0]['result_json']
+                    return pd.DataFrame(result_data)
+                else:
+                    # Se a consulta não retornou linhas, o JSON será nulo.
+                    return pd.DataFrame()
 
             elif not self.is_cloud and self.conn:
+                # A lógica para o DuckDB local permanece a mesma.
                 return self.conn.execute(query).fetchdf()
                 
         except Exception as e:
             print(f"Erro na query: {e}")
+            # Se o erro for de permissão, é a nossa validação de segurança funcionando!
+            if "Operação não permitida" in str(e):
+                st.error("Ação bloqueada: Apenas consultas SELECT são permitidas.")
             return pd.DataFrame()
         
         return pd.DataFrame()
@@ -72,20 +73,53 @@ class Database:
             print("Operação 'save_dataframe' não é suportada no modo cloud. Use o script de upload.")
             return False
         try:
-            # ... (código do save_dataframe para DuckDB mantido)
+            df = df.fillna('')
+            for col in df.columns:
+                df[col] = df[col].astype(str)
+            self.conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+            self.conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df")
+            self.conn.commit()
+            return True
         except Exception as e:
             print(f"Erro ao salvar: {e}")
             return False
     
     def check_table_exists(self, table_name: str) -> bool:
         if self.is_cloud and self.supabase_client:
-            # No Supabase, se a conexão funcionou, a tabela deve existir.
-            # Uma verificação real seria tentar um select com limit 1.
             try:
+                # Uma verificação simples que não depende de SQL dinâmico
                 self.supabase_client.table(table_name).select('id', count='exact').limit(1).execute()
                 return True
             except:
                 return False
         elif not self.is_cloud and self.conn:
-            # ... (código do check_table_exists para DuckDB mantido)
+            try:
+                self.conn.execute(f"SELECT COUNT(*) FROM {table_name} LIMIT 1")
+                return True
+            except:
+                return False
         return False
+    
+    def get_table_info(self) -> pd.DataFrame:
+        # Esta função ainda precisa de uma forma de obter o esquema do Supabase.
+        # Por enquanto, podemos retornar um esquema fixo ou fazer uma chamada RPC específica.
+        if self.is_cloud:
+            # Para simplificar, podemos retornar um esquema fixo que sabemos ser verdadeiro.
+            # A solução ideal seria outra função no Supabase para retornar o esquema.
+            schema_data = [
+                {'name': 'NOME_INFRATOR', 'type': 'TEXT'},
+                {'name': 'CPF_CNPJ_INFRATOR', 'type': 'TEXT'},
+                {'name': 'MUNICIPIO', 'type': 'TEXT'},
+                {'name': 'UF', 'type': 'TEXT'},
+                {'name': 'VAL_AUTO_INFRACAO', 'type': 'TEXT'},
+                {'name': 'TIPO_INFRACAO', 'type': 'TEXT'},
+                {'name': 'DES_INFRACAO', 'type': 'TEXT'},
+                {'name': 'DAT_HORA_AUTO_INFRACAO', 'type': 'TEXT'},
+                # Adicione outras colunas importantes aqui
+            ]
+            return pd.DataFrame(schema_data)
+        else:
+            try:
+                return self.conn.execute("PRAGMA table_info(ibama_infracao)").fetchdf()
+            except:
+                return pd.DataFrame()
