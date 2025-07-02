@@ -33,7 +33,7 @@ print(f"Dados processados. Total de {len(df)} registros prontos para upload.")
 # 2. Configurar o cliente do Supabase
 # ------------------------------------
 supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
+supabase_key = os.getenv("SUPABASE_KEY")
 
 if not supabase_url or not supabase_key:
     raise ValueError("As variáveis de ambiente SUPABASE_URL e SUPABASE_SERVICE_KEY precisam ser definidas.")
