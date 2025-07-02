@@ -3,7 +3,7 @@ from supabase import create_client, Client
 import time
 import os
 
-# Importa os componentes necessários
+# Importa os componentes necessários do seu projeto
 from src.utils.data_loader import DataLoader
 from src.utils.database import Database # Usado para o processamento local inicial
 
@@ -11,15 +11,19 @@ print("Iniciando processo de upload para o Supabase...")
 
 # 1. Baixar e processar os dados localmente primeiro
 # ----------------------------------------------------
-# Lê a URL do IBAMA a partir das variáveis de ambiente
-ibama_zip_url = os.getenv("IBAMA_ZIP_URL", 'https://dadosabertos.ibama.gov.br/dados/SIFISC/auto_infracao/auto_infracao/auto_infracao_csv.zip')
+# Lê a URL do IBAMA a partir das variáveis de ambiente, com um valor padrão
+ibama_zip_url = os.getenv(
+    "IBAMA_ZIP_URL", 
+    'https://dadosabertos.ibama.gov.br/dados/SIFISC/auto_infracao/auto_infracao/auto_infracao_csv.zip'
+)
 
 # Usa um DuckDB em memória para processar os dados antes do upload
 temp_db = Database() 
 data_loader = DataLoader(database=temp_db)
+# Passa a URL para o DataLoader
 data_loader.zip_url = ibama_zip_url
 
-print("Baixando e processando dados do IBAMA...")
+print("Baixando e processando dados do IBAMA (anos 2024-2025)...")
 success = data_loader.download_and_process()
 
 if not success:
@@ -29,6 +33,8 @@ df = temp_db.execute_query("SELECT * FROM ibama_infracao")
 # Garante que não há valores NaN, que podem causar problemas no JSON
 df = df.fillna('')
 print(f"Dados processados. Total de {len(df)} registros prontos para upload.")
+print("Colunas encontradas no DataFrame:", df.columns.tolist())
+
 
 # 2. Configurar o cliente do Supabase
 # ------------------------------------
@@ -42,23 +48,26 @@ supabase: Client = create_client(supabase_url, supabase_key)
 table_name = "ibama_infracao"
 print(f"Conectado ao Supabase. Alvo: tabela '{table_name}'.")
 
+
 # 3. Limpar a tabela existente (Opcional, mas recomendado para atualizações)
 # -------------------------------------------------------------------------
-# print(f"Limpando a tabela '{table_name}' no Supabase antes do upload...")
-# try:
-#     # Deleta todas as linhas da tabela
-#     delete_response = supabase.table(table_name).delete().neq('id', -1).execute()
-#     if delete_response.data:
-#         print(f"  {len(delete_response.data)} linhas deletadas com sucesso.")
-#     else:
-#         # A API pode não retornar dados em um delete bem-sucedido, então verificamos o erro
-#         if hasattr(delete_response, 'error') and delete_response.error:
-#             raise Exception(f"Erro ao limpar a tabela: {delete_response.error.message}")
-#         print("  Tabela limpa ou já estava vazia.")
-# except Exception as e:
-#     print(f"❌ Erro ao tentar limpar a tabela: {e}")
-#     # Decide se quer parar ou continuar mesmo assim. Vamos parar para investigar.
-#     raise
+print(f"Limpando a tabela '{table_name}' no Supabase antes do upload...")
+try:
+    # Deleta todas as linhas da tabela
+    delete_response = supabase.table(table_name).delete().neq('id', -1).execute()
+    
+    # Verifica se a API retornou um erro explícito
+    if hasattr(delete_response, 'error') and delete_response.error:
+        raise Exception(f"Erro ao limpar a tabela: {delete_response.error.message}")
+    
+    # A API pode não retornar dados em um delete bem-sucedido, então o log reflete isso
+    print("  Tabela limpa ou já estava vazia.")
+
+except Exception as e:
+    print(f"❌ Erro ao tentar limpar a tabela: {e}")
+    # Para o script para que o erro possa ser investigado
+    raise
+
 
 # 4. Fazer o upload dos dados em lotes (chunks)
 # ----------------------------------------------
@@ -77,16 +86,13 @@ for i in range(0, len(df), chunk_size):
         # Executa a inserção
         response = supabase.table(table_name).insert(data_to_insert).execute()
         
-        # Verifica a resposta da API
+        # Verifica explicitamente se a API retornou um erro
         if hasattr(response, 'error') and response.error:
-            # Se a API retornou um erro, lança uma exceção para parar o script
             raise Exception(f"Erro da API do Supabase: {response.error.message}")
         
-        # A API do Supabase v2 retorna os dados inseridos em `response.data`
         if response.data:
             print(f"  Lote {chunk_index} enviado com sucesso. {len(response.data)} registros inseridos.")
         else:
-            # Fallback para checagem, caso a API mude
             print(f"  Lote {chunk_index} enviado. A API não retornou dados, mas não houve erro.")
 
         time.sleep(1) # Pausa para não sobrecarregar a API
