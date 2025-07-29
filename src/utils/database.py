@@ -131,9 +131,20 @@ class Database:
             # Método alternativo: tentar simular a consulta
             # Para consultas de agregação simples
             if 'COUNT(' in query_clean and 'SUM(' in query_clean:
-                # Busca todos os dados e faz agregação no pandas
-                result = self.supabase.table('ibama_infracao').select('*').execute()
-                df_full = pd.DataFrame(result.data)
+                # Busca TODOS os dados para fazer agregação correta
+                print("Executando consulta de agregação - buscando todos os dados...")
+                
+                # Tenta buscar todos os dados primeiro
+                try:
+                    result = self.supabase.table('ibama_infracao').select('*').execute()
+                    df_full = pd.DataFrame(result.data)
+                    print(f"Total de registros carregados para agregação: {len(df_full)}")
+                except Exception as e:
+                    print(f"Erro ao buscar todos os dados: {e}")
+                    # Fallback com limite alto
+                    result = self.supabase.table('ibama_infracao').select('*').limit(100000).execute()
+                    df_full = pd.DataFrame(result.data)
+                    print(f"Registros carregados com limite: {len(df_full)}")
                 
                 if df_full.empty:
                     return pd.DataFrame()
@@ -154,15 +165,26 @@ class Database:
                 # Conta municípios únicos
                 total_municipios = df_full['MUNICIPIO'].nunique()
                 
+                print(f"Métricas calculadas: {total_infracoes} infrações, R$ {valor_total_multas:.2f}, {total_municipios} municípios")
+                
                 return pd.DataFrame({
                     'total_infracoes': [total_infracoes],
                     'valor_total_multas': [valor_total_multas],
                     'total_municipios': [total_municipios]
                 })
             
-            # Para outras consultas, retorna dados básicos
-            result = self.supabase.table('ibama_infracao').select('*').limit(1000).execute()
-            return pd.DataFrame(result.data)
+            # Para outras consultas, busca todos os dados também
+            print("Executando consulta geral - buscando todos os dados...")
+            try:
+                result = self.supabase.table('ibama_infracao').select('*').execute()
+                df = pd.DataFrame(result.data)
+                print(f"Consulta geral retornou: {len(df)} registros")
+                return df
+            except Exception as e:
+                print(f"Erro na consulta geral: {e}")
+                # Fallback com limite
+                result = self.supabase.table('ibama_infracao').select('*').limit(50000).execute()
+                return pd.DataFrame(result.data)
                 
         except Exception as e:
             print(f"Erro na consulta Supabase: {e}")
