@@ -59,22 +59,28 @@ def main():
         st.header("🔎 Filtros do Dashboard")
 
         try:
-            # Filtros UF - método simplificado para Supabase
-            if st.session_state.db.is_cloud:
-                # Para Supabase, busca dados diretamente
-                result = st.session_state.db.supabase.table('ibama_infracao').select('UF').execute()
-                if result.data:
-                    ufs_list = list(set([item['UF'] for item in result.data if item.get('UF')]))
-                    ufs_list.sort()
-                else:
-                    ufs_list = []
-            else:
-                # Para DuckDB, usa query original
-                ufs_query = 'SELECT DISTINCT "UF" FROM ibama_infracao WHERE "UF" IS NOT NULL ORDER BY "UF"'
-                ufs_df = st.session_state.db.execute_query(ufs_query)
-                ufs_list = ufs_df['UF'].tolist() if not ufs_df.empty else []
+            # Filtros UF - método otimizado
+            with st.spinner("Carregando estados..."):
+                ufs_list = st.session_state.db.get_unique_values('UF')
+                
+                # Fallback se não conseguir carregar UFs
+                if not ufs_list:
+                    st.warning("Não foi possível carregar UFs do banco. Usando lista padrão.")
+                    ufs_list = [
+                        'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 
+                        'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 
+                        'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
+                    ]
+                
+                # Mostra informação de debug
+                st.sidebar.success(f"✅ {len(ufs_list)} estados carregados")
             
-            selected_ufs = st.multiselect("Selecione o Estado (UF)", options=ufs_list, default=[])
+            selected_ufs = st.multiselect(
+                "Selecione o Estado (UF)", 
+                options=ufs_list, 
+                default=[],
+                help=f"Escolha entre {len(ufs_list)} estados disponíveis"
+            )
 
             # Filtros de ano - método simplificado
             current_year = 2025
