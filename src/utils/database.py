@@ -195,7 +195,47 @@ class Database:
             # Para DuckDB
             return self.execute_query("DESCRIBE ibama_infracao")
 
+    def get_unique_values(self, column: str, limit: int = 50000) -> list:
+        """Obtém valores únicos de uma coluna específica."""
+        try:
+            if self.is_cloud:
+                # Para Supabase, busca com limite alto para pegar todos os valores
+                result = self.supabase.table('ibama_infracao').select(column).limit(limit).execute()
+                if result.data:
+                    # Extrai valores únicos, removendo nulos e vazios
+                    values = [item[column] for item in result.data 
+                             if item.get(column) and str(item[column]).strip()]
+                    return sorted(list(set(values)))
+                return []
+            else:
+                # Para DuckDB
+                query = f'SELECT DISTINCT "{column}" FROM ibama_infracao WHERE "{column}" IS NOT NULL ORDER BY "{column}"'
+                df = self.execute_query(query)
+                return df[column].tolist() if not df.empty else []
+                
     def test_connection(self) -> dict:
+        """Testa a conexão e retorna status."""
+        try:
+            if self.is_cloud:
+                result = self.supabase.table('ibama_infracao').select('count', count='exact').execute()
+                return {
+                    'status': 'success',
+                    'type': 'Supabase',
+                    'count': getattr(result, 'count', 0)
+                }
+            else:
+                result = self.execute_query("SELECT COUNT(*) as count FROM ibama_infracao")
+                return {
+                    'status': 'success', 
+                    'type': 'DuckDB',
+                    'count': result['count'].iloc[0] if not result.empty else 0
+                }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'type': 'Supabase' if self.is_cloud else 'DuckDB',
+                'error': str(e)
+            }
         """Testa a conexão e retorna status."""
         try:
             if self.is_cloud:
