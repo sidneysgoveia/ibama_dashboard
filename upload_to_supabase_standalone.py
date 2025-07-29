@@ -6,6 +6,10 @@ import sys
 import zipfile
 import requests
 from io import BytesIO
+import urllib3
+import ssl
+from urllib.request import urlopen
+from urllib.error import URLError
 
 print("Iniciando processo de upload para o Supabase...")
 
@@ -35,14 +39,62 @@ def download_and_process_data():
     print("Baixando dados do IBAMA...")
     
     try:
-        # Download do arquivo ZIP
-        response = requests.get(IBAMA_ZIP_URL, timeout=300)
-        response.raise_for_status()
+        # Configurações para contornar problemas de SSL
+        # Método 1: Tentar com requests e configurações de SSL relaxadas
+        session = requests.Session()
+        session.verify = False  # Desabilita verificação SSL
         
-        print(f"Download concluído. Tamanho: {len(response.content)} bytes")
+        # Suprimir avisos de SSL não verificado
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        print(f"Tentando download da URL: {IBAMA_ZIP_URL}")
+        
+        try:
+            # Primeira tentativa: requests com SSL desabilitado
+            response = session.get(IBAMA_ZIP_URL, timeout=300, verify=False)
+            response.raise_for_status()
+            content = response.content
+            print(f"✅ Download via requests bem-sucedido. Tamanho: {len(content)} bytes")
+            
+        except Exception as e1:
+            print(f"⚠️ Falha no requests: {e1}")
+            print("Tentando método alternativo com urllib...")
+            
+            # Método 2: urllib com contexto SSL personalizado
+            try:
+                # Cria contexto SSL que aceita certificados auto-assinados
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+                
+                with urlopen(IBAMA_ZIP_URL, timeout=300, context=ssl_context) as response:
+                    content = response.read()
+                    
+                print(f"✅ Download via urllib bem-sucedido. Tamanho: {len(content)} bytes")
+                
+            except Exception as e2:
+                print(f"❌ Falha no urllib: {e2}")
+                
+                # Método 3: Tentar URL HTTP ao invés de HTTPS
+                http_url = IBAMA_ZIP_URL.replace('https://', 'http://')
+                if http_url != IBAMA_ZIP_URL:
+                    print(f"Tentando URL HTTP: {http_url}")
+                    try:
+                        response = session.get(http_url, timeout=300)
+                        response.raise_for_status()
+                        content = response.content
+                        print(f"✅ Download via HTTP bem-sucedido. Tamanho: {len(content)} bytes")
+                    except Exception as e3:
+                        print(f"❌ Falha no HTTP: {e3}")
+                        raise Exception(f"Todos os métodos de download falharam: requests({e1}), urllib({e2}), http({e3})")
+                else:
+                    raise Exception(f"Métodos de download falharam: requests({e1}), urllib({e2})")
+        
+        # Processa o conteúdo baixado
+        print("Processando arquivo ZIP...")
         
         # Extrai o ZIP em memória
-        with zipfile.ZipFile(BytesIO(response.content)) as zip_file:
+        with zipfile.ZipFile(BytesIO(content)) as zip_file:
             # Lista arquivos no ZIP
             file_list = zip_file.namelist()
             csv_files = [f for f in file_list if f.endswith('.csv')]
