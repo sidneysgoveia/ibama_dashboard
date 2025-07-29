@@ -24,6 +24,31 @@ def load_components():
         st.error(f"Erro ao carregar componentes: {e}")
         return None, None, None, None
 
+@st.cache_data(ttl=3600)  # Cache por 1 hora
+def get_all_ufs_from_supabase(supabase_client):
+    """Busca todos os UFs únicos do Supabase com cache."""
+    try:
+        # Busca uma amostra grande de dados
+        result = supabase_client.table('ibama_infracao').select('UF').limit(50000).execute()
+        
+        if result.data:
+            # Extrai UFs únicos
+            all_ufs = [item['UF'] for item in result.data if item.get('UF') and item['UF'].strip()]
+            unique_ufs = sorted(list(set(all_ufs)))
+            
+            # Se conseguiu pelo menos 15 UFs, retorna
+            if len(unique_ufs) >= 15:
+                return unique_ufs
+    except Exception as e:
+        print(f"Erro ao buscar UFs: {e}")
+    
+    # Fallback: retorna lista completa do Brasil
+    return [
+        'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 
+        'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 
+        'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
+    ]
+
 def main():
     st.title("🌳 Análise de Autos de Infração do IBAMA")
     
@@ -59,21 +84,38 @@ def main():
         st.header("🔎 Filtros do Dashboard")
 
         try:
-            # Filtros UF - método otimizado
+            # Filtros UF - método robusto
             with st.spinner("Carregando estados..."):
-                ufs_list = st.session_state.db.get_unique_values('UF')
+                if st.session_state.db.is_cloud and st.session_state.db.supabase:
+                    # Para Supabase, usa função cached
+                    ufs_list = get_all_ufs_from_supabase(st.session_state.db.supabase)
+                else:
+                    # Para DuckDB ou se Supabase falhar
+                    try:
+                        ufs_query = 'SELECT DISTINCT "UF" FROM ibama_infracao WHERE "UF" IS NOT NULL ORDER BY "UF"'
+                        ufs_df = st.session_state.db.execute_query(ufs_query)
+                        ufs_list = ufs_df['UF'].tolist() if not ufs_df.empty else []
+                        
+                        # Se não conseguiu UFs suficientes, usa lista padrão
+                        if len(ufs_list) < 15:
+                            ufs_list = [
+                                'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 
+                                'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 
+                                'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
+                            ]
+                    except:
+                        # Fallback final
+                        ufs_list = [
+                            'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 
+                            'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 
+                            'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
+                        ]
                 
-                # Fallback se não conseguir carregar UFs
-                if not ufs_list:
-                    st.warning("Não foi possível carregar UFs do banco. Usando lista padrão.")
-                    ufs_list = [
-                        'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 
-                        'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 
-                        'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
-                    ]
-                
-                # Mostra informação de debug
-                st.sidebar.success(f"✅ {len(ufs_list)} estados carregados")
+                # Feedback visual
+                if len(ufs_list) >= 20:
+                    st.success(f"✅ {len(ufs_list)} estados carregados")
+                else:
+                    st.warning(f"⚠️ {len(ufs_list)} estados encontrados (usando lista padrão)")
             
             selected_ufs = st.multiselect(
                 "Selecione o Estado (UF)", 
@@ -94,8 +136,23 @@ def main():
                 
         except Exception as e:
             st.error(f"Erro ao carregar filtros: {e}")
+            # Valores padrão em caso de erro
             selected_ufs = []
             year_range = (2024, 2025)
+            
+            # Lista de UFs padrão como fallback final
+            brasil_ufs = [
+                'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 
+                'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 
+                'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
+            ]
+            
+            selected_ufs = st.multiselect(
+                "Selecione o Estado (UF) - Modo Fallback", 
+                options=brasil_ufs, 
+                default=[],
+                help="Lista padrão do Brasil (erro ao carregar da base)"
+            )
 
         st.divider()
         st.info("Os dados são atualizados diariamente.")
