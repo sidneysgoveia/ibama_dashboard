@@ -6,74 +6,94 @@ import numpy as np
 # Importa as funções de formatação
 from src.utils.formatters import format_currency_brazilian, format_number_brazilian
 
-class DataVisualization:
-    def __init__(self, database=None):
-        """Inicializa o componente de visualização com a conexão do banco de dados."""
-        self.database = database
-
-    def _get_filtered_data(self, selected_ufs: list, year_range: tuple) -> pd.DataFrame:
-        """Obtém dados filtrados do Supabase."""
-        try:
-            # Busca TODOS os dados sem limite
-            print("Buscando todos os dados do Supabase...")
+# Importa o paginador
+try:
+    from src.utils.supabase_utils import SupabasePaginator
+except ImportError:
+    # Fallback se o arquivo não existir
+    class SupabasePaginator:
+        def __init__(self, supabase_client):
+            self.supabase = supabase_client
+        
+        def get_filtered_data(self, selected_ufs=None, year_range=None):
+            # Método simples sem paginação como fallback
+            result = self.supabase.table('ibama_infracao').select('*').limit(50000).execute()
+            df = pd.DataFrame(result.data)
             
-            # Método 1: Busca tudo de uma vez (pode ser lento mas completo)
-            try:
-                result = self.database.supabase.table('ibama_infracao').select('*').execute()
-                df = pd.DataFrame(result.data)
-                print(f"Dados carregados: {len(df)} registros totais")
-            except Exception as e:
-                print(f"Erro ao buscar todos os dados: {e}")
-                # Método 2: Busca com limite alto como fallback
-                result = self.database.supabase.table('ibama_infracao').select('*').limit(100000).execute()
-                df = pd.DataFrame(result.data)
-                print(f"Dados carregados com limite: {len(df)} registros")
-            
-            if df.empty:
-                return df
-            
-            # Aplica filtros APÓS carregar todos os dados
-            original_count = len(df)
-            
-            # Filtro por UF
-            if selected_ufs:
+            if selected_ufs and not df.empty:
                 df = df[df['UF'].isin(selected_ufs)]
-                print(f"Após filtro UF: {len(df)} registros (era {original_count})")
             
-            # Filtro por ano
             if year_range and 'DAT_HORA_AUTO_INFRACAO' in df.columns:
                 try:
                     df['DAT_HORA_AUTO_INFRACAO'] = pd.to_datetime(df['DAT_HORA_AUTO_INFRACAO'], errors='coerce')
-                    
-                    # Conta registros por ano para debug
-                    if not df.empty:
-                        year_counts = df['DAT_HORA_AUTO_INFRACAO'].dt.year.value_counts()
-                        print(f"Registros por ano: {dict(year_counts.head(10))}")
-                    
                     df = df[
                         (df['DAT_HORA_AUTO_INFRACAO'].dt.year >= year_range[0]) &
                         (df['DAT_HORA_AUTO_INFRACAO'].dt.year <= year_range[1])
                     ]
-                    print(f"Após filtro de ano ({year_range}): {len(df)} registros")
-                except Exception as e:
-                    print(f"Erro no filtro de ano: {e}")
-                    pass  # Se não conseguir filtrar por data, continua sem filtro
+                except:
+                    pass
             
-            print(f"Dados finais retornados: {len(df)} registros")
             return df
-            
-        except Exception as e:
-            st.error(f"Erro ao obter dados: {e}")
-            return pd.DataFrame()
+
+class DataVisualization:
+    def __init__(self, database=None):
+        """Inicializa o componente de visualização com a conexão do banco de dados."""
+        self.database = database
+        
+        # Inicializa o paginador se estiver usando Supabase
+        if database and database.is_cloud and database.supabase:
+            self.paginator = SupabasePaginator(database.supabase)
+        else:
+            self.paginator = None
+
+    def _get_filtered_data(self, selected_ufs: list, year_range: tuple) -> pd.DataFrame:
+        """Obtém dados filtrados usando paginação quando necessário."""
+        
+        if self.paginator:
+            # Usa paginação para buscar todos os dados
+            print("🔄 Usando paginação para buscar todos os dados...")
+            return self.paginator.get_filtered_data(selected_ufs, year_range)
+        else:
+            # Fallback para método tradicional (DuckDB ou erro no Supabase)
+            print("⚠️ Usando método tradicional (sem paginação)")
+            try:
+                if self.database.is_cloud:
+                    # Tenta com limite alto
+                    result = self.database.supabase.table('ibama_infracao').select('*').limit(50000).execute()
+                    df = pd.DataFrame(result.data)
+                else:
+                    # DuckDB - usa query direta
+                    df = self.database.execute_query("SELECT * FROM ibama_infracao")
+                
+                # Aplica filtros localmente
+                if selected_ufs and not df.empty:
+                    df = df[df['UF'].isin(selected_ufs)]
+                
+                if year_range and 'DAT_HORA_AUTO_INFRACAO' in df.columns:
+                    try:
+                        df['DAT_HORA_AUTO_INFRACAO'] = pd.to_datetime(df['DAT_HORA_AUTO_INFRACAO'], errors='coerce')
+                        df = df[
+                            (df['DAT_HORA_AUTO_INFRACAO'].dt.year >= year_range[0]) &
+                            (df['DAT_HORA_AUTO_INFRACAO'].dt.year <= year_range[1])
+                        ]
+                    except:
+                        pass
+                
+                return df
+                
+            except Exception as e:
+                st.error(f"Erro ao obter dados: {e}")
+                return pd.DataFrame()
 
     def create_overview_metrics(self, selected_ufs: list, year_range: tuple):
-        """Cria as métricas de visão geral usando dados do Supabase."""
-        if not self.database or not self.database.supabase:
+        """Cria as métricas de visão geral usando dados completos."""
+        if not self.database:
             st.warning("Banco de dados não disponível.")
             return
 
         try:
-            df = self._get_filtered_data(selected_ufs, year_range)
+            with st.spinner("Carregando dados completos..."):
+                df = self._get_filtered_data(selected_ufs, year_range)
             
             if df.empty:
                 st.warning("Nenhum dado encontrado para os filtros selecionados.")
@@ -102,6 +122,9 @@ class DataVisualization:
             col1.metric("Total de Infrações", format_number_brazilian(total_infracoes))
             col2.metric("Valor Total das Multas", format_currency_brazilian(valor_total_multas))
             col3.metric("Municípios Afetados", format_number_brazilian(total_municipios))
+            
+            # Info de debug
+            st.caption(f"📊 Dados processados: {len(df):,} registros")
 
         except Exception as e:
             st.error(f"Erro ao calcular métricas: {e}")
@@ -338,6 +361,7 @@ class DataVisualization:
                 
                 if not df_map.empty:
                     st.map(df_map[['lat', 'lon']], zoom=3)
+                    st.caption(f"📍 Exibindo {len(df_map):,} pontos de {len(df):,} infrações")
                 else:
                     st.warning("Nenhuma coordenada válida após conversão.")
                     
@@ -380,3 +404,9 @@ class DataVisualization:
                 
         except Exception as e:
             st.error(f"Erro no gráfico de status: {e}")
+
+    def force_refresh(self):
+        """Força atualização dos dados limpando cache."""
+        if self.paginator:
+            self.paginator.clear_cache()
+            st.success("🔄 Cache limpo! Os dados serão recarregados.")
