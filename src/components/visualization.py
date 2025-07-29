@@ -14,27 +14,52 @@ class DataVisualization:
     def _get_filtered_data(self, selected_ufs: list, year_range: tuple) -> pd.DataFrame:
         """Obtém dados filtrados do Supabase."""
         try:
-            # Busca todos os dados
-            result = self.database.supabase.table('ibama_infracao').select('*').execute()
-            df = pd.DataFrame(result.data)
+            # Busca TODOS os dados sem limite
+            print("Buscando todos os dados do Supabase...")
+            
+            # Método 1: Busca tudo de uma vez (pode ser lento mas completo)
+            try:
+                result = self.database.supabase.table('ibama_infracao').select('*').execute()
+                df = pd.DataFrame(result.data)
+                print(f"Dados carregados: {len(df)} registros totais")
+            except Exception as e:
+                print(f"Erro ao buscar todos os dados: {e}")
+                # Método 2: Busca com limite alto como fallback
+                result = self.database.supabase.table('ibama_infracao').select('*').limit(100000).execute()
+                df = pd.DataFrame(result.data)
+                print(f"Dados carregados com limite: {len(df)} registros")
             
             if df.empty:
                 return df
             
-            # Aplica filtros
+            # Aplica filtros APÓS carregar todos os dados
+            original_count = len(df)
+            
+            # Filtro por UF
             if selected_ufs:
                 df = df[df['UF'].isin(selected_ufs)]
+                print(f"Após filtro UF: {len(df)} registros (era {original_count})")
             
+            # Filtro por ano
             if year_range and 'DAT_HORA_AUTO_INFRACAO' in df.columns:
                 try:
                     df['DAT_HORA_AUTO_INFRACAO'] = pd.to_datetime(df['DAT_HORA_AUTO_INFRACAO'], errors='coerce')
+                    
+                    # Conta registros por ano para debug
+                    if not df.empty:
+                        year_counts = df['DAT_HORA_AUTO_INFRACAO'].dt.year.value_counts()
+                        print(f"Registros por ano: {dict(year_counts.head(10))}")
+                    
                     df = df[
                         (df['DAT_HORA_AUTO_INFRACAO'].dt.year >= year_range[0]) &
                         (df['DAT_HORA_AUTO_INFRACAO'].dt.year <= year_range[1])
                     ]
-                except:
+                    print(f"Após filtro de ano ({year_range}): {len(df)} registros")
+                except Exception as e:
+                    print(f"Erro no filtro de ano: {e}")
                     pass  # Se não conseguir filtrar por data, continua sem filtro
             
+            print(f"Dados finais retornados: {len(df)} registros")
             return df
             
         except Exception as e:
