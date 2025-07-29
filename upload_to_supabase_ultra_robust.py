@@ -12,7 +12,7 @@ from urllib.request import urlopen, Request
 from urllib.error import URLError
 import subprocess
 
-print("🌳 Iniciando processo de upload para o Supabase (Versão Ultra Robusta)...")
+print("🌳 Iniciando processo de upload para o Supabase (Versão Final)...")
 
 # --- 1. Configuração de variáveis de ambiente ---
 def get_env_var(key: str, default: str = None) -> str:
@@ -118,9 +118,9 @@ def download_with_requests_http(url):
     response.raise_for_status()
     return response.content
 
-# --- 3. Processamento dos dados ---
+# --- 3. Processamento inteligente dos dados ---
 def download_and_process_data():
-    """Download e processa os dados do IBAMA."""
+    """Download e processa os dados do IBAMA de forma inteligente."""
     print("📥 Baixando dados do IBAMA...")
     
     try:
@@ -138,64 +138,133 @@ def download_and_process_data():
             if not csv_files:
                 raise ValueError("Nenhum arquivo CSV encontrado no ZIP")
             
-            print(f"📄 Arquivos CSV encontrados: {csv_files}")
+            print(f"📄 Total de arquivos CSV encontrados: {len(csv_files)}")
+            print(f"    Arquivos: {', '.join(csv_files[:5])}{'...' if len(csv_files) > 5 else ''}")
             
-            # Processa o primeiro arquivo CSV
-            csv_file = csv_files[0]
-            print(f"⚙️ Processando arquivo: {csv_file}")
+            # Estratégia inteligente: priorizar arquivos 2024-2025, mas ter fallback
+            target_years = ['2024', '2025']
+            priority_files = [f for f in csv_files if any(year in f for year in target_years)]
             
-            # Lê o CSV com múltiplas tentativas de encoding
-            df = None
-            encodings = ['utf-8', 'latin1', 'cp1252', 'iso-8859-1']
-            separators = [';', ',', '\t']
+            if priority_files:
+                print(f"🎯 Arquivos prioritários encontrados (2024-2025): {priority_files}")
+                files_to_process = priority_files
+            else:
+                # Se não encontrar arquivos específicos, pega os mais recentes
+                print("⚠️ Arquivos 2024-2025 não encontrados. Processando arquivos mais recentes...")
+                # Ordena os arquivos pelo nome (que geralmente tem o ano) em ordem decrescente
+                sorted_files = sorted(csv_files, reverse=True)
+                files_to_process = sorted_files[:5]  # Pega os 5 mais recentes
+                print(f"📅 Processando arquivos mais recentes: {files_to_process}")
             
-            for encoding in encodings:
-                for sep in separators:
-                    try:
-                        with zip_file.open(csv_file) as csv_data:
-                            df = pd.read_csv(csv_data, encoding=encoding, sep=sep, low_memory=False)
-                            if len(df.columns) > 5:  # Verifica se os dados fazem sentido
-                                print(f"✅ CSV lido com sucesso (encoding: {encoding}, sep: '{sep}')")
-                                break
-                    except Exception as e:
-                        continue
-                if df is not None and len(df.columns) > 5:
-                    break
+            # Processa os arquivos selecionados
+            all_dataframes = []
+            total_records = 0
             
-            if df is None or len(df.columns) <= 5:
-                raise ValueError("Não foi possível ler o arquivo CSV com nenhuma configuração")
+            for csv_file in files_to_process:
+                print(f"⚙️ Processando: {csv_file}")
                 
-        print(f"📊 Dados carregados. Shape: {df.shape}")
-        print(f"📋 Colunas: {list(df.columns)[:10]}...")  # Mostra apenas as primeiras 10
-        
-        # Filtra dados dos últimos 2 anos (2024-2025) se a coluna existir
-        original_size = len(df)
-        if 'DAT_HORA_AUTO_INFRACAO' in df.columns:
-            try:
-                # Converte a coluna de data
-                df['DAT_HORA_AUTO_INFRACAO'] = pd.to_datetime(df['DAT_HORA_AUTO_INFRACAO'], errors='coerce')
-                
-                # Filtra pelos anos 2024 e 2025
-                df = df[df['DAT_HORA_AUTO_INFRACAO'].dt.year.isin([2024, 2025])]
-                print(f"📅 Dados filtrados (2024-2025): {original_size:,} → {len(df):,} registros")
-            except Exception as e:
-                print(f"⚠️ Erro ao filtrar por data, usando todos os dados: {e}")
-        else:
-            print("⚠️ Coluna de data não encontrada, usando todos os dados")
+                try:
+                    df_temp = read_csv_robust(zip_file, csv_file)
+                    
+                    if df_temp is not None and len(df_temp) > 0:
+                        print(f"    ✅ Sucesso: {len(df_temp):,} registros, {len(df_temp.columns)} colunas")
+                        all_dataframes.append(df_temp)
+                        total_records += len(df_temp)
+                    else:
+                        print(f"    ⚠️ Arquivo vazio ou inválido: {csv_file}")
+                        
+                except Exception as e:
+                    print(f"    ❌ Erro ao processar {csv_file}: {str(e)[:100]}...")
+                    continue
+            
+            if not all_dataframes:
+                raise ValueError("Não foi possível processar nenhum arquivo CSV com dados válidos")
+            
+            # Combina todos os DataFrames
+            print(f"🔄 Combinando {len(all_dataframes)} arquivos válidos...")
+            df = pd.concat(all_dataframes, ignore_index=True, sort=False)
+            print(f"📊 Dados combinados: {len(df):,} registros, {len(df.columns)} colunas")
+            
+        # Filtro adicional por data se necessário
+        df = apply_date_filter(df)
         
         # Limpeza final
-        df = df.fillna('')  # Remove NaN
+        df = clean_dataframe(df)
         
-        # Remove colunas completamente vazias
-        df = df.dropna(axis=1, how='all')
+        if len(df) == 0:
+            raise ValueError("Nenhum registro restou após filtros e limpeza")
         
         print(f"🎯 Dados finais prontos: {len(df):,} registros, {len(df.columns)} colunas")
-        
         return df
         
     except Exception as e:
         print(f"❌ Erro ao baixar/processar dados: {e}")
         raise
+
+def read_csv_robust(zip_file, csv_file):
+    """Lê um arquivo CSV de forma robusta com múltiplas tentativas."""
+    encodings = ['utf-8', 'latin1', 'cp1252', 'iso-8859-1']
+    separators = [';', ',', '\t']
+    
+    for encoding in encodings:
+        for sep in separators:
+            try:
+                with zip_file.open(csv_file) as csv_data:
+                    df = pd.read_csv(csv_data, encoding=encoding, sep=sep, low_memory=False)
+                    
+                    # Validações básicas
+                    if len(df.columns) > 5 and len(df) > 0:
+                        return df
+                        
+            except Exception:
+                continue
+    
+    return None
+
+def apply_date_filter(df):
+    """Aplica filtro de data se possível."""
+    if 'DAT_HORA_AUTO_INFRACAO' not in df.columns:
+        print("📅 Coluna de data não encontrada, mantendo todos os registros")
+        return df
+    
+    try:
+        original_size = len(df)
+        
+        # Converte a coluna de data
+        df['DAT_HORA_AUTO_INFRACAO'] = pd.to_datetime(df['DAT_HORA_AUTO_INFRACAO'], errors='coerce')
+        
+        # Verifica se conseguimos converter alguma data
+        valid_dates = df['DAT_HORA_AUTO_INFRACAO'].notna().sum()
+        if valid_dates == 0:
+            print("⚠️ Nenhuma data válida encontrada, mantendo todos os registros")
+            return df
+        
+        # Filtra pelos anos 2024 e 2025
+        df_filtered = df[df['DAT_HORA_AUTO_INFRACAO'].dt.year.isin([2024, 2025])]
+        
+        if len(df_filtered) > 0:
+            print(f"📅 Filtro de data aplicado (2024-2025): {original_size:,} → {len(df_filtered):,} registros")
+            return df_filtered
+        else:
+            print(f"⚠️ Nenhum registro de 2024-2025 encontrado, mantendo todos os {original_size:,} registros")
+            return df
+            
+    except Exception as e:
+        print(f"⚠️ Erro ao aplicar filtro de data: {e}")
+        return df
+
+def clean_dataframe(df):
+    """Limpa o DataFrame para upload."""
+    # Remove valores NaN
+    df = df.fillna('')
+    
+    # Remove colunas completamente vazias
+    df = df.dropna(axis=1, how='all')
+    
+    # Remove linhas completamente vazias
+    df = df.dropna(axis=0, how='all')
+    
+    return df
 
 # --- 4. Execução principal ---
 try:
@@ -222,7 +291,7 @@ try:
         raise
     
     # --- 7. Upload dos dados em lotes ---
-    chunk_size = 500
+    chunk_size = 1000  # Aumentado para ser mais eficiente
     total_chunks = (len(df) // chunk_size) + 1
     print(f"🚀 Iniciando upload de {len(df):,} registros em {total_chunks} lotes de {chunk_size}...")
     
@@ -231,7 +300,7 @@ try:
     
     for i in range(0, len(df), chunk_size):
         chunk_index = i // chunk_size + 1
-        print(f"  📤 Processando lote {chunk_index}/{total_chunks}...")
+        print(f"  📤 Lote {chunk_index}/{total_chunks}...", end=" ")
         
         chunk = df[i:i + chunk_size]
         data_to_insert = chunk.to_dict(orient='records')
@@ -240,22 +309,22 @@ try:
             response = supabase.table(table_name).insert(data_to_insert).execute()
             
             if hasattr(response, 'error') and response.error:
-                raise Exception(f"Erro da API do Supabase: {response.error.message}")
+                raise Exception(f"Erro da API: {response.error.message}")
             
             successful_uploads += len(data_to_insert)
-            print(f"    ✅ Lote {chunk_index} enviado ({len(data_to_insert)} registros)")
+            print(f"✅ {len(data_to_insert)} registros")
             
-            time.sleep(0.5)  # Pausa menor para não sobrecarregar
+            time.sleep(0.2)  # Pausa otimizada
             
         except Exception as e:
             failed_uploads += len(data_to_insert)
-            print(f"    ❌ Falha no lote {chunk_index}: {str(e)[:100]}...")
+            print(f"❌ Falha: {str(e)[:50]}...")
             continue
     
     # --- 8. Relatório final ---
     print(f"\n{'='*60}")
     print(f"📊 RELATÓRIO FINAL:")
-    print(f"  📥 Total de registros processados: {len(df):,}")
+    print(f"  📥 Total processado: {len(df):,} registros")
     print(f"  ✅ Uploads bem-sucedidos: {successful_uploads:,}")
     print(f"  ❌ Uploads falharam: {failed_uploads:,}")
     print(f"  📈 Taxa de sucesso: {(successful_uploads/len(df))*100:.1f}%")
@@ -264,9 +333,12 @@ try:
     if failed_uploads == 0:
         print("🎉 Upload para o Supabase concluído com sucesso!")
         sys.exit(0)
+    elif successful_uploads > failed_uploads:
+        print("⚠️  Upload concluído com êxito parcial.")
+        sys.exit(0)
     else:
-        print("⚠️  Upload concluído com algumas falhas.")
-        sys.exit(1 if failed_uploads > successful_uploads else 0)
+        print("❌ Upload falhou - muitos erros.")
+        sys.exit(1)
 
 except Exception as e:
     print(f"💥 Erro crítico: {e}")
