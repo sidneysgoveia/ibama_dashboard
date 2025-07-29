@@ -24,30 +24,43 @@ def load_components():
         st.error(f"Erro ao carregar componentes: {e}")
         return None, None, None, None
 
-@st.cache_data(ttl=3600)  # Cache por 1 hora
-def get_all_ufs_from_supabase(supabase_client):
-    """Busca todos os UFs únicos do Supabase com cache."""
-    try:
-        # Busca uma amostra grande de dados
-        result = supabase_client.table('ibama_infracao').select('UF').limit(50000).execute()
-        
-        if result.data:
-            # Extrai UFs únicos
-            all_ufs = [item['UF'] for item in result.data if item.get('UF') and item['UF'].strip()]
-            unique_ufs = sorted(list(set(all_ufs)))
-            
-            # Se conseguiu pelo menos 15 UFs, retorna
-            if len(unique_ufs) >= 15:
-                return unique_ufs
-    except Exception as e:
-        print(f"Erro ao buscar UFs: {e}")
-    
-    # Fallback: retorna lista completa do Brasil
-    return [
+def get_ufs_from_database(database_obj):
+    """Busca UFs do banco de dados sem cache."""
+    # Lista padrão do Brasil como fallback
+    brasil_ufs = [
         'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 
         'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 
         'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
     ]
+    
+    try:
+        if database_obj.is_cloud and database_obj.supabase:
+            # Para Supabase, busca amostra de UFs
+            result = database_obj.supabase.table('ibama_infracao').select('UF').limit(10000).execute()
+            
+            if result.data:
+                # Extrai UFs únicos
+                all_ufs = [item['UF'] for item in result.data if item.get('UF') and str(item['UF']).strip()]
+                unique_ufs = sorted(list(set(all_ufs)))
+                
+                # Se conseguiu UFs suficientes, usa da base
+                if len(unique_ufs) >= 10:
+                    return unique_ufs, f"Da base de dados ({len(unique_ufs)} estados)"
+        
+        # Se não conseguiu do Supabase, tenta query SQL
+        try:
+            ufs_query = 'SELECT DISTINCT "UF" FROM ibama_infracao WHERE "UF" IS NOT NULL ORDER BY "UF"'
+            ufs_df = database_obj.execute_query(ufs_query)
+            if not ufs_df.empty and len(ufs_df) >= 10:
+                return ufs_df['UF'].tolist(), f"Via SQL ({len(ufs_df)} estados)"
+        except:
+            pass
+    
+    except Exception as e:
+        print(f"Erro ao buscar UFs: {e}")
+    
+    # Fallback: usa lista do Brasil
+    return brasil_ufs, f"Lista padrão ({len(brasil_ufs)} estados)"
 
 def main():
     st.title("🌳 Análise de Autos de Infração do IBAMA")
@@ -84,44 +97,23 @@ def main():
         st.header("🔎 Filtros do Dashboard")
 
         try:
-            # Filtros UF - método robusto
+            # Filtros UF - método ultra simples sem cache
             with st.spinner("Carregando estados..."):
-                if st.session_state.db.is_cloud and st.session_state.db.supabase:
-                    # Para Supabase, usa função cached
-                    ufs_list = get_all_ufs_from_supabase(st.session_state.db.supabase)
-                else:
-                    # Para DuckDB ou se Supabase falhar
-                    try:
-                        ufs_query = 'SELECT DISTINCT "UF" FROM ibama_infracao WHERE "UF" IS NOT NULL ORDER BY "UF"'
-                        ufs_df = st.session_state.db.execute_query(ufs_query)
-                        ufs_list = ufs_df['UF'].tolist() if not ufs_df.empty else []
-                        
-                        # Se não conseguiu UFs suficientes, usa lista padrão
-                        if len(ufs_list) < 15:
-                            ufs_list = [
-                                'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 
-                                'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 
-                                'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
-                            ]
-                    except:
-                        # Fallback final
-                        ufs_list = [
-                            'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 
-                            'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 
-                            'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
-                        ]
+                ufs_list, source_info = get_ufs_from_database(st.session_state.db)
                 
-                # Feedback visual
-                if len(ufs_list) >= 20:
-                    st.success(f"✅ {len(ufs_list)} estados carregados")
+                # Feedback visual sobre a fonte dos dados
+                if "base de dados" in source_info:
+                    st.success(f"✅ Estados carregados: {source_info}")
+                elif "SQL" in source_info:
+                    st.info(f"ℹ️ Estados carregados: {source_info}")
                 else:
-                    st.warning(f"⚠️ {len(ufs_list)} estados encontrados (usando lista padrão)")
+                    st.warning(f"⚠️ Usando fallback: {source_info}")
             
             selected_ufs = st.multiselect(
                 "Selecione o Estado (UF)", 
                 options=ufs_list, 
                 default=[],
-                help=f"Escolha entre {len(ufs_list)} estados disponíveis"
+                help=f"Estados disponíveis: {len(ufs_list)}"
             )
 
             # Filtros de ano - método simplificado
@@ -131,16 +123,14 @@ def main():
                 "Selecione o Intervalo de Anos", 
                 min_year, 
                 current_year, 
-                (min_year, current_year)
+                (min_year, current_year),
+                help="Dados disponíveis de 2024 a 2025"
             )
                 
         except Exception as e:
             st.error(f"Erro ao carregar filtros: {e}")
-            # Valores padrão em caso de erro
-            selected_ufs = []
-            year_range = (2024, 2025)
             
-            # Lista de UFs padrão como fallback final
+            # Fallback completo em caso de erro total
             brasil_ufs = [
                 'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 
                 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 
@@ -148,11 +138,13 @@ def main():
             ]
             
             selected_ufs = st.multiselect(
-                "Selecione o Estado (UF) - Modo Fallback", 
+                "Selecione o Estado (UF) - Modo Emergência", 
                 options=brasil_ufs, 
                 default=[],
-                help="Lista padrão do Brasil (erro ao carregar da base)"
+                help="Lista padrão (erro ao conectar com base de dados)"
             )
+            
+            year_range = (2024, 2025)
 
         st.divider()
         st.info("Os dados são atualizados diariamente.")
