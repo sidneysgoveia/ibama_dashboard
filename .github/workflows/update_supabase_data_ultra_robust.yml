@@ -1,0 +1,87 @@
+name: 🌳 Atualização Diária dos Dados do IBAMA (Ultra Robusto)
+
+on:
+  # Permite execução manual
+  workflow_dispatch:
+    inputs:
+      force_update:
+        description: 'Forçar atualização mesmo em caso de erros menores'
+        required: false
+        default: 'false'
+        type: boolean
+  
+  # Agenda para execução diária
+  schedule:
+    - cron: '0 13 * * *'  # 13:00 UTC = 10:00 BRT
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45  # Timeout aumentado
+    
+    steps:
+      # Passo 1: Checkout do código
+      - name: 📁 Checkout do repositório
+        uses: actions/checkout@v4
+
+      # Passo 2: Configurar Python
+      - name: 🐍 Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # Passo 3: Instalar dependências essenciais
+      - name: 📦 Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas supabase requests urllib3
+          
+          # Verificar se wget e curl estão disponíveis
+          echo "🔍 Verificando ferramentas de download disponíveis:"
+          which wget && echo "✅ wget disponível" || echo "❌ wget não disponível"
+          which curl && echo "✅ curl disponível" || echo "❌ curl não disponível"
+
+      # Passo 4: Verificar conectividade
+      - name: 🔗 Testar conectividade
+        run: |
+          echo "🌐 Testando conectividade com o IBAMA..."
+          curl -I --connect-timeout 10 --max-time 30 -k \
+               "https://dadosabertos.ibama.gov.br/" || true
+          
+          echo "🔍 Testando resolução DNS..."
+          nslookup dadosabertos.ibama.gov.br || true
+
+      # Passo 5: Executar script de upload ultra robusto
+      - name: 🚀 Executar upload ultra robusto
+        run: python upload_to_supabase_ultra_robust.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          IBAMA_ZIP_URL: 'https://dadosabertos.ibama.gov.br/dados/SIFISC/auto_infracao/auto_infracao/auto_infracao_csv.zip'
+
+      # Passo 6: Upload de logs de debug (sempre executado)
+      - name: 📋 Upload de logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: execution-logs-${{ github.run_number }}
+          path: |
+            *.log
+            **/*.log
+          retention-days: 7
+
+      # Passo 7: Notificação de sucesso (opcional)
+      - name: ✅ Notificar sucesso
+        if: success()
+        run: |
+          echo "🎉 Atualização dos dados do IBAMA concluída com sucesso!"
+          echo "📊 Dados atualizados em: $(date)"
+          
+      # Passo 8: Notificação de falha (opcional)  
+      - name: ❌ Notificar falha
+        if: failure()
+        run: |
+          echo "💥 Falha na atualização dos dados do IBAMA!"
+          echo "🕐 Falha ocorrida em: $(date)"
+          echo "🔍 Verifique os logs para mais detalhes."
