@@ -35,32 +35,42 @@ def get_ufs_from_database(database_obj):
     
     try:
         if database_obj.is_cloud and database_obj.supabase:
-            # Para Supabase, busca amostra de UFs
-            result = database_obj.supabase.table('ibama_infracao').select('UF').limit(10000).execute()
+            # Para Supabase, usa o paginador se disponível
+            try:
+                from src.utils.supabase_utils import SupabasePaginator
+                paginator = SupabasePaginator(database_obj.supabase)
+                
+                # Busca todos os dados e extrai UFs únicos
+                df = paginator.get_all_records()
+                if not df.empty and 'UF' in df.columns:
+                    ufs_from_data = df['UF'].dropna().unique().tolist()
+                    unique_ufs = sorted([uf for uf in ufs_from_data if str(uf).strip()])
+                    
+                    if len(unique_ufs) >= 10:
+                        return unique_ufs, f"Da base completa ({len(unique_ufs)} estados)"
+            except ImportError:
+                pass
+            
+            # Fallback: busca amostra direta do Supabase
+            result = database_obj.supabase.table('ibama_infracao').select('UF').limit(50000).execute()
             
             if result.data:
-                # Extrai UFs únicos
+                # Extrai UFs únicos da amostra
                 all_ufs = [item['UF'] for item in result.data if item.get('UF') and str(item['UF']).strip()]
                 unique_ufs = sorted(list(set(all_ufs)))
                 
                 # Se conseguiu UFs suficientes, usa da base
-                if len(unique_ufs) >= 10:
+                if len(unique_ufs) >= 15:
                     return unique_ufs, f"Da base de dados ({len(unique_ufs)} estados)"
         
-        # Se não conseguiu do Supabase, tenta query SQL
-        try:
-            ufs_query = 'SELECT DISTINCT "UF" FROM ibama_infracao WHERE "UF" IS NOT NULL ORDER BY "UF"'
-            ufs_df = database_obj.execute_query(ufs_query)
-            if not ufs_df.empty and len(ufs_df) >= 10:
-                return ufs_df['UF'].tolist(), f"Via SQL ({len(ufs_df)} estados)"
-        except:
-            pass
+        # Não tenta SQL para Supabase (sabemos que não funciona)
+        # Vai direto para o fallback
     
     except Exception as e:
         print(f"Erro ao buscar UFs: {e}")
     
     # Fallback: usa lista do Brasil
-    return brasil_ufs, f"Lista padrão ({len(brasil_ufs)} estados)"
+    return brasil_ufs, f"Lista padrão Brasil ({len(brasil_ufs)} estados)"
 
 def main():
     st.title("🌳 Análise de Autos de Infração do IBAMA")
@@ -97,17 +107,17 @@ def main():
         st.header("🔎 Filtros do Dashboard")
 
         try:
-            # Filtros UF - método ultra simples sem cache
+            # Filtros UF - método corrigido e simplificado
             with st.spinner("Carregando estados..."):
                 ufs_list, source_info = get_ufs_from_database(st.session_state.db)
                 
-                # Feedback visual sobre a fonte dos dados
-                if "base de dados" in source_info:
-                    st.success(f"✅ Estados carregados: {source_info}")
-                elif "SQL" in source_info:
-                    st.info(f"ℹ️ Estados carregados: {source_info}")
+                # Feedback visual mais preciso
+                if "base completa" in source_info:
+                    st.success(source_info)
+                elif "base de dados" in source_info or "amostra" in source_info:
+                    st.info(source_info)
                 else:
-                    st.warning(f"⚠️ Usando fallback: {source_info}")
+                    st.info(source_info)  # Para "Lista oficial Brasil"
             
             selected_ufs = st.multiselect(
                 "Selecione o Estado (UF)", 
@@ -168,7 +178,7 @@ def main():
             """)
 
     # Abas principais
-    tab1, tab2, tab3 = st.tabs(["📊 Dashboard Interativo", "💬 Chatbot com IA", "🔍 Explorador SQL"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard Interativo", "💬 Chatbot com IA", "🔍 Explorador SQL", "🔧 Diagnóstico"])
     
     with tab1:
         st.header("Dashboard de Análise de Infrações Ambientais")
@@ -226,6 +236,83 @@ def main():
                     st.error(f"Erro na consulta: {e}")
             else:
                 st.error("Apenas consultas SELECT são permitidas por segurança.")
+    
+    with tab4:
+        st.header("🔧 Diagnóstico do Sistema")
+        st.caption("Identifica problemas de contagem de registros")
+        
+        if st.button("🚀 Executar Diagnóstico", type="primary"):
+            with st.spinner("Executando diagnóstico..."):
+                try:
+                    # Teste 1: Count exato
+                    st.subheader("📊 Testes de Contagem")
+                    
+                    if st.session_state.db.is_cloud and st.session_state.db.supabase:
+                        supabase = st.session_state.db.supabase
+                        
+                        # Count exato
+                        result = supabase.table('ibama_infracao').select('*', count='exact').limit(1).execute()
+                        count_exact = getattr(result, 'count', 0)
+                        
+                        # Busca completa
+                        result_all = supabase.table('ibama_infracao').select('*').execute()
+                        count_all = len(result_all.data) if result_all.data else 0
+                        
+                        # Exibe resultados
+                        col1, col2 = st.columns(2)
+                        col1.metric("Count API", f"{count_exact:,}")
+                        col2.metric("Busca Completa", f"{count_all:,}")
+                        
+                        if count_exact != count_all:
+                            st.warning(f"⚠️ PROBLEMA: API diz {count_exact:,} mas carregou {count_all:,}")
+                        
+                        # Análise por ano
+                        if result_all.data:
+                            df = pd.DataFrame(result_all.data)
+                            st.info(f"DataFrame: {len(df)} registros, {len(df.columns)} colunas")
+                            
+                            if 'DAT_HORA_AUTO_INFRACAO' in df.columns:
+                                df['DAT_HORA_AUTO_INFRACAO'] = pd.to_datetime(df['DAT_HORA_AUTO_INFRACAO'], errors='coerce')
+                                
+                                # Por ano
+                                year_counts = df['DAT_HORA_AUTO_INFRACAO'].dt.year.value_counts().sort_index()
+                                
+                                st.subheader("📅 Registros por Ano")
+                                for year, count in year_counts.tail(6).items():
+                                    if pd.notna(year) and year >= 2020:
+                                        st.write(f"**{int(year)}:** {count:,} registros")
+                                
+                                # Foco 2024-2025
+                                df_recent = df[df['DAT_HORA_AUTO_INFRACAO'].dt.year.isin([2024, 2025])]
+                                
+                                st.subheader("🎯 Simulação Dashboard")
+                                total_infracoes = len(df_recent)
+                                
+                                if total_infracoes == 1000:
+                                    st.error("❌ PROBLEMA CONFIRMADO: Limitado a 1.000 registros")
+                                    st.info("💡 Supabase limita select('*') a 1000 registros por padrão")
+                                elif total_infracoes > 15000:
+                                    st.success(f"✅ Funcionando! {total_infracoes:,} registros")
+                                else:
+                                    st.warning(f"⚠️ Resultado inesperado: {total_infracoes:,} registros")
+                        
+                    else:
+                        st.error("❌ Banco não está em modo cloud ou Supabase não inicializado")
+                        
+                except Exception as e:
+                    st.error(f"❌ Erro no diagnóstico: {e}")
+        
+        # Teste rápido
+        if st.button("⚡ Teste Rápido"):
+            try:
+                if st.session_state.db.is_cloud:
+                    result = st.session_state.db.supabase.table('ibama_infracao').select('*', count='exact').limit(1).execute()
+                    count = getattr(result, 'count', 0)
+                    st.success(f"✅ {count:,} registros na base")
+                else:
+                    st.info("ℹ️ Modo local - não aplicável")
+            except Exception as e:
+                st.error(f"❌ {e}")
 
 if __name__ == "__main__":
     main()
