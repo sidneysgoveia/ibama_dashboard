@@ -90,37 +90,15 @@ def main():
             st.error(f"Erro ao carregar filtros: {e}")
             selected_ufs = []
             year_range = (2024, 2025)
-                    ufs_list.sort()
-                else:
-                    ufs_list = []
-            else:
-                # Para DuckDB, usa query original
-                ufs_query = 'SELECT DISTINCT "UF" FROM ibama_infracao WHERE "UF" IS NOT NULL ORDER BY "UF"'
-                ufs_df = st.session_state.db.execute_query(ufs_query)
-                ufs_list = ufs_df['UF'].tolist() if not ufs_df.empty else []
-            
-            selected_ufs = st.multiselect("Selecione o Estado (UF)", options=ufs_list, default=[])
-
-            # Filtros de ano - método simplificado
-            current_year = 2025
-            min_year = 2024
-            year_range = st.slider(
-                "Selecione o Intervalo de Anos", 
-                min_year, 
-                current_year, 
-                (min_year, current_year)
-            )
-                
-        except Exception as e:
-            st.error(f"Erro ao carregar filtros: {e}")
-            selected_ufs = []
-            year_range = (2024, 2025)
 
         st.divider()
         st.info("Os dados são atualizados diariamente.")
         
         # Sample questions do chatbot
-        st.session_state.chatbot.display_sample_questions()
+        try:
+            st.session_state.chatbot.display_sample_questions()
+        except:
+            pass
 
         st.divider()
         with st.expander("⚠️ Avisos Importantes"):
@@ -166,7 +144,7 @@ def main():
             
             try:
                 st.session_state.viz = DataVisualization(database=st.session_state.db)
-                st.experimental_rerun()
+                st.rerun()
             except:
                 st.error("Não foi possível recarregar os componentes. Recarregue a página.")
     
