@@ -47,7 +47,7 @@ class DataVisualization:
             self.paginator = None
 
     def _get_filtered_data(self, selected_ufs: list, year_range: tuple) -> pd.DataFrame:
-        """Obtém dados filtrados usando paginação quando necessário."""
+        """Obtém dados filtrados usando paginação quando necessário (método legacy)."""
         
         if self.paginator:
             # Usa paginação para buscar todos os dados
@@ -85,15 +85,90 @@ class DataVisualization:
                 st.error(f"Erro ao obter dados: {e}")
                 return pd.DataFrame()
 
-    def create_overview_metrics(self, selected_ufs: list, year_range: tuple):
-        """Cria as métricas de visão geral usando dados completos."""
+    def _get_filtered_data_advanced(self, selected_ufs: list, date_filters: dict) -> pd.DataFrame:
+        """Obtém dados filtrados usando os novos filtros avançados de data."""
+        
+        if self.paginator:
+            # Usa paginação para buscar todos os dados
+            print("🔄 Usando paginação para buscar todos os dados...")
+            df = self.paginator.get_all_records()
+        else:
+            # Fallback para método tradicional (DuckDB ou erro no Supabase)
+            print("⚠️ Usando método tradicional (sem paginação)")
+            try:
+                if self.database.is_cloud:
+                    # Tenta com limite alto
+                    result = self.database.supabase.table('ibama_infracao').select('*').limit(50000).execute()
+                    df = pd.DataFrame(result.data)
+                else:
+                    # DuckDB - usa query direta
+                    df = self.database.execute_query("SELECT * FROM ibama_infracao")
+                
+            except Exception as e:
+                st.error(f"Erro ao obter dados: {e}")
+                return pd.DataFrame()
+        
+        if df.empty:
+            return df
+        
+        # Aplica filtro de UF
+        if selected_ufs and 'UF' in df.columns:
+            df = df[df['UF'].isin(selected_ufs)]
+        
+        # Aplica filtros de data avançados
+        df = self._apply_date_filter_to_dataframe(df, date_filters)
+        
+        return df
+
+    def _apply_date_filter_to_dataframe(self, df: pd.DataFrame, date_filters: dict) -> pd.DataFrame:
+        """Aplica filtros de data ao DataFrame."""
+        if df.empty or 'DAT_HORA_AUTO_INFRACAO' not in df.columns:
+            return df
+        
+        try:
+            # Converte coluna de data
+            df['DATE_PARSED'] = pd.to_datetime(df['DAT_HORA_AUTO_INFRACAO'], errors='coerce')
+            df_with_date = df[df['DATE_PARSED'].notna()].copy()
+            
+            if df_with_date.empty:
+                return df_with_date
+            
+            if date_filters["mode"] == "simple":
+                # Filtro simples por anos
+                mask = df_with_date['DATE_PARSED'].dt.year.isin(date_filters["years"])
+                return df_with_date[mask]
+            
+            else:
+                # Filtro avançado por períodos
+                masks = []
+                for year, months in date_filters["periods"].items():
+                    year_mask = df_with_date['DATE_PARSED'].dt.year == year
+                    month_mask = df_with_date['DATE_PARSED'].dt.month.isin(months)
+                    masks.append(year_mask & month_mask)
+                
+                if masks:
+                    final_mask = masks[0]
+                    for mask in masks[1:]:
+                        final_mask = final_mask | mask
+                    return df_with_date[final_mask]
+                else:
+                    return pd.DataFrame()
+        
+        except Exception as e:
+            st.error(f"Erro ao aplicar filtro de data: {e}")
+            return df
+
+    # ======================== MÉTODOS AVANÇADOS ========================
+
+    def create_overview_metrics_advanced(self, selected_ufs: list, date_filters: dict):
+        """Cria as métricas de visão geral usando filtros avançados."""
         if not self.database:
             st.warning("Banco de dados não disponível.")
             return
 
         try:
             with st.spinner("Carregando dados completos..."):
-                df = self._get_filtered_data(selected_ufs, year_range)
+                df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
             if df.empty:
                 st.warning("Nenhum dado encontrado para os filtros selecionados.")
@@ -123,16 +198,16 @@ class DataVisualization:
             col2.metric("Valor Total das Multas", format_currency_brazilian(valor_total_multas))
             col3.metric("Municípios Afetados", format_number_brazilian(total_municipios))
             
-            # Info de debug
-            st.caption(f"📊 Dados processados: {len(df):,} registros")
+            # Info de debug com descrição dos filtros
+            st.caption(f"📊 Dados processados: {len(df):,} registros | {date_filters['description']}")
 
         except Exception as e:
             st.error(f"Erro ao calcular métricas: {e}")
 
-    def create_state_distribution_chart(self, selected_ufs: list, year_range: tuple):
-        """Cria gráfico de distribuição por estado."""
+    def create_state_distribution_chart_advanced(self, selected_ufs: list, date_filters: dict):
+        """Cria gráfico de distribuição por estado com filtros avançados."""
         try:
-            df = self._get_filtered_data(selected_ufs, year_range)
+            df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
             if df.empty or 'UF' not in df.columns:
                 st.warning("Dados de UF não disponíveis.")
@@ -160,10 +235,10 @@ class DataVisualization:
         except Exception as e:
             st.error(f"Erro no gráfico de estados: {e}")
 
-    def create_municipality_hotspots_chart(self, selected_ufs: list, year_range: tuple):
-        """Cria gráfico dos municípios com mais infrações."""
+    def create_municipality_hotspots_chart_advanced(self, selected_ufs: list, date_filters: dict):
+        """Cria gráfico dos municípios com mais infrações usando filtros avançados."""
         try:
-            df = self._get_filtered_data(selected_ufs, year_range)
+            df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
             if df.empty or 'MUNICIPIO' not in df.columns:
                 st.warning("Dados de município não disponíveis.")
@@ -196,10 +271,10 @@ class DataVisualization:
         except Exception as e:
             st.error(f"Erro no gráfico de municípios: {e}")
 
-    def create_fine_value_by_type_chart(self, selected_ufs: list, year_range: tuple):
-        """Cria gráfico de valores de multa por tipo."""
+    def create_fine_value_by_type_chart_advanced(self, selected_ufs: list, date_filters: dict):
+        """Cria gráfico de valores de multa por tipo com filtros avançados."""
         try:
-            df = self._get_filtered_data(selected_ufs, year_range)
+            df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
             if df.empty or 'TIPO_INFRACAO' not in df.columns:
                 return
@@ -243,10 +318,10 @@ class DataVisualization:
         except Exception as e:
             st.error(f"Erro no gráfico de tipos: {e}")
 
-    def create_gravity_distribution_chart(self, selected_ufs: list, year_range: tuple):
-        """Cria gráfico de distribuição por gravidade."""
+    def create_gravity_distribution_chart_advanced(self, selected_ufs: list, date_filters: dict):
+        """Cria gráfico de distribuição por gravidade com filtros avançados."""
         try:
-            df = self._get_filtered_data(selected_ufs, year_range)
+            df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
             if df.empty or 'GRAVIDADE_INFRACAO' not in df.columns:
                 return
@@ -271,10 +346,10 @@ class DataVisualization:
         except Exception as e:
             st.error(f"Erro no gráfico de gravidade: {e}")
 
-    def create_main_offenders_chart(self, selected_ufs: list, year_range: tuple):
-        """Cria gráfico dos principais infratores."""
+    def create_main_offenders_chart_advanced(self, selected_ufs: list, date_filters: dict):
+        """Cria gráfico dos principais infratores com filtros avançados."""
         try:
-            df = self._get_filtered_data(selected_ufs, year_range)
+            df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
             if df.empty or 'NOME_INFRATOR' not in df.columns:
                 return
@@ -318,12 +393,12 @@ class DataVisualization:
         except Exception as e:
             st.error(f"Erro no gráfico de infratores: {e}")
 
-    def create_infraction_map(self, selected_ufs: list, year_range: tuple):
-        """Cria mapa de calor das infrações."""
+    def create_infraction_map_advanced(self, selected_ufs: list, date_filters: dict):
+        """Cria mapa de calor das infrações com filtros avançados."""
         st.subheader("Mapa de Calor de Infrações")
         
         try:
-            df = self._get_filtered_data(selected_ufs, year_range)
+            df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
             if df.empty:
                 st.warning("Nenhum dado encontrado.")
@@ -361,17 +436,17 @@ class DataVisualization:
                 
                 if not df_map.empty:
                     st.map(df_map[['lat', 'lon']], zoom=3)
-                    st.caption(f"📍 Exibindo {len(df_map):,} pontos de {len(df):,} infrações")
+                    st.caption(f"📍 Exibindo {len(df_map):,} pontos de {len(df):,} infrações | {date_filters['description']}")
                 else:
                     st.warning("Nenhuma coordenada válida após conversão.")
                     
         except Exception as e:
             st.error(f"Erro no mapa: {e}")
 
-    def create_infraction_status_chart(self, selected_ufs: list, year_range: tuple):
-        """Cria gráfico do status das infrações."""
+    def create_infraction_status_chart_advanced(self, selected_ufs: list, date_filters: dict):
+        """Cria gráfico do status das infrações com filtros avançados."""
         try:
-            df = self._get_filtered_data(selected_ufs, year_range)
+            df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
             if df.empty or 'DES_STATUS_FORMULARIO' not in df.columns:
                 return
@@ -404,6 +479,88 @@ class DataVisualization:
                 
         except Exception as e:
             st.error(f"Erro no gráfico de status: {e}")
+
+    # ======================== MÉTODOS LEGACY (para compatibilidade) ========================
+
+    def create_overview_metrics(self, selected_ufs: list, year_range: tuple):
+        """Método legacy - converte year_range para date_filters."""
+        date_filters = {
+            "mode": "simple",
+            "years": list(range(year_range[0], year_range[1] + 1)),
+            "year_range": year_range,
+            "description": f"{year_range[0]}-{year_range[1]}"
+        }
+        return self.create_overview_metrics_advanced(selected_ufs, date_filters)
+
+    def create_infraction_map(self, selected_ufs: list, year_range: tuple):
+        """Método legacy - converte year_range para date_filters."""
+        date_filters = {
+            "mode": "simple",
+            "years": list(range(year_range[0], year_range[1] + 1)),
+            "year_range": year_range,
+            "description": f"{year_range[0]}-{year_range[1]}"
+        }
+        return self.create_infraction_map_advanced(selected_ufs, date_filters)
+
+    def create_municipality_hotspots_chart(self, selected_ufs: list, year_range: tuple):
+        """Método legacy - converte year_range para date_filters."""
+        date_filters = {
+            "mode": "simple",
+            "years": list(range(year_range[0], year_range[1] + 1)),
+            "year_range": year_range,
+            "description": f"{year_range[0]}-{year_range[1]}"
+        }
+        return self.create_municipality_hotspots_chart_advanced(selected_ufs, date_filters)
+
+    def create_fine_value_by_type_chart(self, selected_ufs: list, year_range: tuple):
+        """Método legacy - converte year_range para date_filters."""
+        date_filters = {
+            "mode": "simple",
+            "years": list(range(year_range[0], year_range[1] + 1)),
+            "year_range": year_range,
+            "description": f"{year_range[0]}-{year_range[1]}"
+        }
+        return self.create_fine_value_by_type_chart_advanced(selected_ufs, date_filters)
+
+    def create_gravity_distribution_chart(self, selected_ufs: list, year_range: tuple):
+        """Método legacy - converte year_range para date_filters."""
+        date_filters = {
+            "mode": "simple",
+            "years": list(range(year_range[0], year_range[1] + 1)),
+            "year_range": year_range,
+            "description": f"{year_range[0]}-{year_range[1]}"
+        }
+        return self.create_gravity_distribution_chart_advanced(selected_ufs, date_filters)
+
+    def create_state_distribution_chart(self, selected_ufs: list, year_range: tuple):
+        """Método legacy - converte year_range para date_filters."""
+        date_filters = {
+            "mode": "simple",
+            "years": list(range(year_range[0], year_range[1] + 1)),
+            "year_range": year_range,
+            "description": f"{year_range[0]}-{year_range[1]}"
+        }
+        return self.create_state_distribution_chart_advanced(selected_ufs, date_filters)
+
+    def create_infraction_status_chart(self, selected_ufs: list, year_range: tuple):
+        """Método legacy - converte year_range para date_filters."""
+        date_filters = {
+            "mode": "simple",
+            "years": list(range(year_range[0], year_range[1] + 1)),
+            "year_range": year_range,
+            "description": f"{year_range[0]}-{year_range[1]}"
+        }
+        return self.create_infraction_status_chart_advanced(selected_ufs, date_filters)
+
+    def create_main_offenders_chart(self, selected_ufs: list, year_range: tuple):
+        """Método legacy - converte year_range para date_filters."""
+        date_filters = {
+            "mode": "simple",
+            "years": list(range(year_range[0], year_range[1] + 1)),
+            "year_range": year_range,
+            "description": f"{year_range[0]}-{year_range[1]}"
+        }
+        return self.create_main_offenders_chart_advanced(selected_ufs, date_filters)
 
     def force_refresh(self):
         """Força atualização dos dados limpando cache."""
