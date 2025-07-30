@@ -397,34 +397,75 @@ class DataVisualization:
             st.error(f"Erro no gráfico de tipos: {e}")
 
     def create_gravity_distribution_chart_advanced(self, selected_ufs: list, date_filters: dict):
-        """Cria gráfico de distribuição por gravidade com contagem correta."""
+        """Cria gráfico de distribuição por gravidade incluindo infrações sem avaliação (Baixa, Média, Sem avaliação feita)."""
         try:
             df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
             if df.empty or 'GRAVIDADE_INFRACAO' not in df.columns:
                 return
             
-            # Remove valores vazios
-            df_clean = df[df['GRAVIDADE_INFRACAO'].notna() & (df['GRAVIDADE_INFRACAO'] != '')]
-            
-            if df_clean.empty:
-                return
+            # Prepara DataFrame tratando valores vazios/nulos como "Sem avaliação feita"
+            df_processed = df.copy()
+            df_processed['GRAVIDADE_INFRACAO'] = df_processed['GRAVIDADE_INFRACAO'].fillna('Sem avaliação feita')
+            df_processed['GRAVIDADE_INFRACAO'] = df_processed['GRAVIDADE_INFRACAO'].replace('', 'Sem avaliação feita')
             
             # Conta infrações únicas por gravidade se NUM_AUTO_INFRACAO disponível
-            if 'NUM_AUTO_INFRACAO' in df_clean.columns:
-                gravity_counts = df_clean.groupby('GRAVIDADE_INFRACAO')['NUM_AUTO_INFRACAO'].nunique()
+            if 'NUM_AUTO_INFRACAO' in df_processed.columns:
+                gravity_counts = df_processed.groupby('GRAVIDADE_INFRACAO')['NUM_AUTO_INFRACAO'].nunique()
                 method_note = "infrações únicas"
             else:
-                gravity_counts = df_clean['GRAVIDADE_INFRACAO'].value_counts()
+                gravity_counts = df_processed['GRAVIDADE_INFRACAO'].value_counts()
                 method_note = "registros"
             
             if not gravity_counts.empty:
+                # Define cores específicas para as categorias
+                color_map = {
+                    'Baixa': '#28a745',          # Verde
+                    'Média': '#ffc107',          # Amarelo  
+                    'Sem avaliação feita': '#6c757d'  # Cinza
+                }
+                
+                # Cria lista de cores baseada nos dados (ordem: Baixa, Média, Sem avaliação feita)
+                gravity_order = ['Baixa', 'Média', 'Sem avaliação feita']
+                ordered_counts = []
+                ordered_names = []
+                ordered_colors = []
+                
+                for gravity in gravity_order:
+                    if gravity in gravity_counts.index:
+                        ordered_counts.append(gravity_counts[gravity])
+                        ordered_names.append(gravity)
+                        ordered_colors.append(color_map.get(gravity, '#17a2b8'))
+                
+                # Adiciona outras categorias que não estão na ordem padrão
+                for gravity, count in gravity_counts.items():
+                    if gravity not in gravity_order:
+                        ordered_counts.append(count)
+                        ordered_names.append(gravity)
+                        ordered_colors.append('#17a2b8')  # Cor padrão
+                
                 fig = px.pie(
-                    values=gravity_counts.values,
-                    names=gravity_counts.index,
+                    values=ordered_counts,
+                    names=ordered_names,
                     title=f"<b>Distribuição por Gravidade da Infração ({method_note})</b>", 
-                    hole=0.4
+                    hole=0.4,
+                    color_discrete_sequence=ordered_colors
                 )
+                
+                # Adiciona informação sobre dados sem avaliação se existirem
+                sem_avaliacao = gravity_counts.get('Sem avaliação feita', 0)
+                if sem_avaliacao > 0:
+                    total_infracoes = gravity_counts.sum()
+                    percentual_sem_avaliacao = (sem_avaliacao / total_infracoes) * 100
+                    
+                    fig.add_annotation(
+                        text=f"* {sem_avaliacao:,} infrações ({percentual_sem_avaliacao:.1f}%) sem avaliação de gravidade",
+                        xref="paper", yref="paper",
+                        x=0.5, y=-0.1, xanchor='center', yanchor='top',
+                        showarrow=False,
+                        font=dict(size=10, color="gray")
+                    )
+                
                 st.plotly_chart(fig, use_container_width=True)
                 
         except Exception as e:
@@ -613,7 +654,7 @@ class DataVisualization:
         return self.create_fine_value_by_type_chart_advanced(selected_ufs, date_filters)
 
     def create_gravity_distribution_chart(self, selected_ufs: list, year_range: tuple):
-        """Método legacy - converte year_range para date_filters."""
+        """Método legacy - converte year_range para date_filters e inclui infrações sem avaliação."""
         date_filters = {
             "mode": "simple",
             "years": list(range(year_range[0], year_range[1] + 1)),
