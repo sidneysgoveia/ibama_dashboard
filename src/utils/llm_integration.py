@@ -194,8 +194,10 @@ class LLMIntegration:
                 # Busca na internet para perguntas conceituais
                 try:
                     search_result = search_internet(question)
+                    final_answer = search_result + "\n\n⚠️ **Aviso Importante:** Todas as respostas precisam ser checadas. Os modelos de IA podem ter erros de alucinação, baixa qualidade em certos pontos, vieses ou problemas éticos."
+                    
                     return {
-                        "answer": search_result,
+                        "answer": final_answer,
                         "source": "internet",
                         "provider": provider
                     }
@@ -234,6 +236,9 @@ class LLMIntegration:
                         final_answer = "Não encontrei dados para sua consulta no banco de dados."
                     else:
                         final_answer = self._format_results(question, db_results)
+                    
+                    # Adiciona aviso sobre IA apenas se a resposta foi gerada por LLM
+                    final_answer += "\n\n⚠️ **Aviso Importante:** Todas as respostas precisam ser checadas. Os modelos de IA podem ter erros de alucinação, baixa qualidade em certos pontos, vieses ou problemas éticos."
                     
                     return {
                         "answer": final_answer,
@@ -338,7 +343,9 @@ class LLMIntegration:
                     analysis_prompt, 
                     generation_config=generation_config
                 )
-                return response.text
+                analysis_result = response.text
+                analysis_result += "\n\n⚠️ **Aviso Importante:** Todas as respostas precisam ser checadas. Os modelos de IA podem ter erros de alucinação, baixa qualidade em certos pontos, vieses ou problemas éticos."
+                return analysis_result
             except Exception as e:
                 return f"Erro na análise com Gemini: {str(e)}"
                 
@@ -350,7 +357,9 @@ class LLMIntegration:
                     temperature=temperature, 
                     max_tokens=min(max_tokens, 1024)
                 )
-                return response.choices[0].message.content
+                analysis_result = response.choices[0].message.content
+                analysis_result += "\n\n⚠️ **Aviso Importante:** Todas as respostas precisam ser checadas. Os modelos de IA podem ter erros de alucinação, baixa qualidade em certos pontos, vieses ou problemas éticos."
+                return analysis_result
             except Exception as e:
                 return f"Erro na análise com Groq: {str(e)}"
         
