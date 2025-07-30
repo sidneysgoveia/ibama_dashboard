@@ -416,7 +416,7 @@ def main():
     
     with tab1:
         st.header("Dashboard de Análise de Infrações Ambientais")
-        st.caption("Use os filtros na barra lateral para explorar os dados.")
+        st.caption("Use os filtros na barra lateral para explorar os dados. Sem repetir NUM_AUTO_INFRACAO")
         
         try:
             # Passa os novos filtros para as visualizações
