@@ -189,8 +189,14 @@ class DataVisualization:
             except:
                 valor_total_multas = 0
             
-            # Total de municípios
-            total_municipios = df['MUNICIPIO'].nunique() if 'MUNICIPIO' in df.columns else 0
+            # Total de municípios - USA COD_MUNICIPIO para maior precisão
+            if 'COD_MUNICIPIO' in df.columns:
+                total_municipios = df['COD_MUNICIPIO'].nunique()
+            elif 'MUNICIPIO' in df.columns:
+                # Fallback para nome se código não estiver disponível
+                total_municipios = df['MUNICIPIO'].nunique()
+            else:
+                total_municipios = 0
 
             # Exibe métricas
             col1, col2, col3 = st.columns(3)
@@ -240,21 +246,55 @@ class DataVisualization:
         try:
             df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
-            if df.empty or 'MUNICIPIO' not in df.columns:
-                st.warning("Dados de município não disponíveis.")
+            if df.empty:
+                st.warning("Dados não disponíveis.")
                 return
             
-            # Remove valores vazios
-            df_clean = df[df['MUNICIPIO'].notna() & (df['MUNICIPIO'] != '')]
-            
-            if df_clean.empty:
+            # Verifica se temos código do município
+            if 'COD_MUNICIPIO' in df.columns and 'MUNICIPIO' in df.columns and 'UF' in df.columns:
+                # Remove valores vazios nos campos necessários
+                df_clean = df[
+                    df['COD_MUNICIPIO'].notna() & 
+                    df['MUNICIPIO'].notna() & 
+                    df['UF'].notna() &
+                    (df['COD_MUNICIPIO'] != '') & 
+                    (df['MUNICIPIO'] != '') & 
+                    (df['UF'] != '')
+                ].copy()
+                
+                if df_clean.empty:
+                    st.warning("Dados de município não disponíveis após limpeza.")
+                    return
+                
+                # Agrupa por código do município (mais confiável) e pega nome e UF
+                # Usa first() para pegar o primeiro nome encontrado para cada código
+                muni_counts = df_clean.groupby('COD_MUNICIPIO').agg({
+                    'MUNICIPIO': 'first',  # Pega o primeiro nome encontrado
+                    'UF': 'first',         # Pega a primeira UF encontrada
+                    'COD_MUNICIPIO': 'count'  # Conta as infrações
+                }).rename(columns={'COD_MUNICIPIO': 'total'})
+                
+                muni_counts = muni_counts.reset_index()
+                muni_counts = muni_counts.nlargest(10, 'total')
+                
+            elif 'MUNICIPIO' in df.columns and 'UF' in df.columns:
+                # Fallback para o método anterior se não tiver código
+                st.caption("⚠️ Usando nomes de municípios (podem haver inconsistências)")
+                
+                df_clean = df[df['MUNICIPIO'].notna() & (df['MUNICIPIO'] != '')]
+                
+                if df_clean.empty:
+                    return
+                
+                muni_counts = df_clean.groupby(['MUNICIPIO', 'UF']).size().reset_index(name='total')
+                muni_counts = muni_counts.nlargest(10, 'total')
+                
+            else:
+                st.warning("Colunas necessárias para análise de municípios não encontradas.")
                 return
-            
-            # Top 10 municípios
-            muni_counts = df_clean.groupby(['MUNICIPIO', 'UF']).size().reset_index(name='total')
-            muni_counts = muni_counts.nlargest(10, 'total')
             
             if not muni_counts.empty:
+                # Cria label combinado para exibição
                 muni_counts['local'] = muni_counts['MUNICIPIO'].str.title() + ' (' + muni_counts['UF'] + ')'
                 
                 fig = px.bar(
@@ -266,6 +306,17 @@ class DataVisualization:
                     labels={'local': 'Município', 'total': 'Nº de Infrações'},
                     text='total'
                 )
+                
+                # Adiciona informação sobre o método usado
+                if 'COD_MUNICIPIO' in df.columns:
+                    fig.add_annotation(
+                        text="* Contagem por código IBGE do município",
+                        xref="paper", yref="paper",
+                        x=1, y=-0.1, xanchor='right', yanchor='top',
+                        showarrow=False,
+                        font=dict(size=10, color="gray")
+                    )
+                
                 st.plotly_chart(fig, use_container_width=True)
                 
         except Exception as e:
