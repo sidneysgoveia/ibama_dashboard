@@ -5,7 +5,7 @@ from datetime import datetime
 
 # Configuração otimizada para reduzir uso de recursos
 st.set_page_config(
-    page_title="Análise de Infrações IBAMA", 
+    page_title="Análise de Infrações IBAMA (versão beta)", 
     page_icon="🌳", 
     layout="wide",
     initial_sidebar_state="expanded"
