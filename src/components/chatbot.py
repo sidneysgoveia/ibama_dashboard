@@ -119,13 +119,19 @@ class Chatbot:
             }
     
     def _analyze_top_states(self, df: pd.DataFrame, question: str) -> Dict[str, Any]:
-        """Analisa os estados com mais infrações."""
+        """Analisa os estados com mais infrações usando contagem correta."""
         try:
             if 'UF' not in df.columns:
                 return {"answer": "❌ Coluna UF não encontrada nos dados.", "source": "error"}
             
-            # Conta infrações por estado
-            state_counts = df['UF'].value_counts()
+            # Conta infrações únicas por estado se NUM_AUTO_INFRACAO disponível
+            if 'NUM_AUTO_INFRACAO' in df.columns:
+                state_counts = df.groupby('UF')['NUM_AUTO_INFRACAO'].nunique().sort_values(ascending=False)
+                method_info = "infrações únicas"
+            else:
+                # Fallback para contagem de registros
+                state_counts = df['UF'].value_counts()
+                method_info = "registros (pode incluir duplicatas)"
             
             # Extrai número do top (padrão 5)
             import re
@@ -138,10 +144,10 @@ class Chatbot:
             # Formata resposta
             answer = f"**🏆 Top {top_n} Estados com Mais Infrações:**\n\n"
             for i, (uf, count) in enumerate(top_states.items(), 1):
-                percentage = (count / len(df)) * 100
+                percentage = (count / state_counts.sum()) * 100
                 answer += f"{i}. **{uf}**: {count:,} infrações ({percentage:.1f}%)\n"
             
-            answer += f"\n📊 Total analisado: {len(df):,} infrações"
+            answer += f"\n📊 Total analisado: {state_counts.sum():,} {method_info}"
             
             return {"answer": answer, "source": "data_analysis"}
             
@@ -149,59 +155,62 @@ class Chatbot:
             return {"answer": f"❌ Erro ao analisar estados: {e}", "source": "error"}
     
     def _analyze_top_municipalities(self, df: pd.DataFrame, question: str) -> Dict[str, Any]:
-        """Analisa os municípios com mais infrações."""
+        """Analisa os municípios com mais infrações usando contagem correta."""
         try:
             # Verifica colunas disponíveis
-            required_base_cols = ['UF']
+            required_base_cols = ['UF', 'MUNICIPIO']
             if not all(col in df.columns for col in required_base_cols):
                 return {"answer": "❌ Colunas necessárias não encontradas.", "source": "error"}
             
-            # Método preferido: usar código do município
-            if 'COD_MUNICIPIO' in df.columns and 'MUNICIPIO' in df.columns:
-                # Remove valores vazios
-                df_clean = df[
-                    df['COD_MUNICIPIO'].notna() & 
-                    df['MUNICIPIO'].notna() & 
-                    df['UF'].notna() &
-                    (df['COD_MUNICIPIO'] != '') & 
-                    (df['MUNICIPIO'] != '') & 
-                    (df['UF'] != '')
-                ].copy()
-                
-                if df_clean.empty:
-                    return {"answer": "❌ Nenhum dado válido de município encontrado.", "source": "error"}
-                
-                # Agrupa por código do município e pega dados representativos
-                muni_data = df_clean.groupby('COD_MUNICIPIO').agg({
-                    'MUNICIPIO': 'first',  # Pega o primeiro nome (mais comum)
-                    'UF': 'first',         # Pega a UF
-                    'COD_MUNICIPIO': 'count'  # Conta infrações
-                }).rename(columns={'COD_MUNICIPIO': 'count'})
-                
-                muni_data = muni_data.reset_index()
-                muni_data = muni_data.sort_values('count', ascending=False)
-                
-                method_info = "contagem por código IBGE (mais precisa)"
-                
-            elif 'MUNICIPIO' in df.columns:
-                # Fallback: usar nome do município
-                df_clean = df[
-                    df['MUNICIPIO'].notna() & 
-                    df['UF'].notna() &
-                    (df['MUNICIPIO'] != '') & 
-                    (df['UF'] != '')
+            # Remove valores vazios
+            df_clean = df[
+                df['MUNICIPIO'].notna() & 
+                df['UF'].notna() &
+                (df['MUNICIPIO'] != '') & 
+                (df['UF'] != '')
+            ].copy()
+            
+            if df_clean.empty:
+                return {"answer": "❌ Nenhum dado válido encontrado.", "source": "error"}
+            
+            # Método preferido: usar código do município se disponível
+            if 'COD_MUNICIPIO' in df.columns and 'NUM_AUTO_INFRACAO' in df.columns:
+                df_clean = df_clean[
+                    df_clean['COD_MUNICIPIO'].notna() & 
+                    df_clean['NUM_AUTO_INFRACAO'].notna() &
+                    (df_clean['COD_MUNICIPIO'] != '') &
+                    (df_clean['NUM_AUTO_INFRACAO'] != '')
                 ]
                 
                 if df_clean.empty:
-                    return {"answer": "❌ Nenhum dado válido de município encontrado.", "source": "error"}
+                    return {"answer": "❌ Códigos de município não disponíveis.", "source": "error"}
                 
+                # Conta INFRAÇÕES ÚNICAS por código do município
+                muni_data = df_clean.groupby(['COD_MUNICIPIO', 'MUNICIPIO', 'UF'])['NUM_AUTO_INFRACAO'].nunique().reset_index()
+                muni_data.rename(columns={'NUM_AUTO_INFRACAO': 'count'}, inplace=True)
+                muni_data = muni_data.sort_values('count', ascending=False)
+                
+                method_info = "contagem por código IBGE + infrações únicas"
+                
+            elif 'NUM_AUTO_INFRACAO' in df.columns:
+                # Fallback: usar nome do município com contagem única
+                df_clean = df_clean[
+                    df_clean['NUM_AUTO_INFRACAO'].notna() &
+                    (df_clean['NUM_AUTO_INFRACAO'] != '')
+                ]
+                
+                muni_data = df_clean.groupby(['MUNICIPIO', 'UF'])['NUM_AUTO_INFRACAO'].nunique().reset_index()
+                muni_data.rename(columns={'NUM_AUTO_INFRACAO': 'count'}, inplace=True)
+                muni_data = muni_data.sort_values('count', ascending=False)
+                
+                method_info = "contagem por nome + infrações únicas"
+                
+            else:
+                # Último fallback: contagem simples de registros
                 muni_data = df_clean.groupby(['MUNICIPIO', 'UF']).size().reset_index(name='count')
                 muni_data = muni_data.sort_values('count', ascending=False)
                 
-                method_info = "contagem por nome (pode haver inconsistências)"
-                
-            else:
-                return {"answer": "❌ Dados de município não disponíveis.", "source": "error"}
+                method_info = "contagem por nome (pode incluir duplicatas)"
             
             # Extrai número do top (padrão 5)
             import re
@@ -213,7 +222,8 @@ class Chatbot:
             
             answer = f"**🏙️ Top {top_n} Municípios com Mais Infrações:**\n\n"
             for i, row in enumerate(top_munis.itertuples(), 1):
-                answer += f"{i}. **{row.MUNICIPIO} ({row.UF})**: {row.count:,} infrações\n"
+                suffix = " únicas" if "únicas" in method_info else ""
+                answer += f"{i}. **{row.MUNICIPIO} ({row.UF})**: {row.count:,} infrações{suffix}\n"
             
             answer += f"\n📊 Total de municípios únicos: {len(muni_data):,}"
             answer += f"\n*Método: {method_info}*"
@@ -309,11 +319,18 @@ class Chatbot:
                 return {"answer": "❌ Coluna de tipos não encontrada.", "source": "error"}
             
             df_clean = df[df['TIPO_INFRACAO'].notna() & (df['TIPO_INFRACAO'] != '')]
-            type_counts = df_clean['TIPO_INFRACAO'].value_counts().head(10)
             
-            answer = "**📋 Principais Tipos de Infrações:**\n\n"
+            # Conta infrações únicas por tipo se NUM_AUTO_INFRACAO disponível
+            if 'NUM_AUTO_INFRACAO' in df_clean.columns:
+                type_counts = df_clean.groupby('TIPO_INFRACAO')['NUM_AUTO_INFRACAO'].nunique().sort_values(ascending=False).head(10)
+                method_info = "infrações únicas"
+            else:
+                type_counts = df_clean['TIPO_INFRACAO'].value_counts().head(10)
+                method_info = "registros"
+            
+            answer = f"**📋 Principais Tipos de Infrações ({method_info}):**\n\n"
             for i, (tipo, count) in enumerate(type_counts.items(), 1):
-                percentage = (count / len(df_clean)) * 100
+                percentage = (count / type_counts.sum()) * 100
                 answer += f"{i}. **{tipo.title()}**: {count:,} casos ({percentage:.1f}%)\n"
             
             return {"answer": answer, "source": "data_analysis"}
@@ -330,9 +347,15 @@ class Chatbot:
             df['DATE'] = pd.to_datetime(df['DAT_HORA_AUTO_INFRACAO'], errors='coerce')
             df_with_date = df[df['DATE'].notna()]
             
-            year_counts = df_with_date['DATE'].dt.year.value_counts().sort_index()
+            # Conta infrações únicas por ano se NUM_AUTO_INFRACAO disponível
+            if 'NUM_AUTO_INFRACAO' in df_with_date.columns:
+                year_counts = df_with_date.groupby(df_with_date['DATE'].dt.year)['NUM_AUTO_INFRACAO'].nunique().sort_index()
+                method_info = "infrações únicas"
+            else:
+                year_counts = df_with_date['DATE'].dt.year.value_counts().sort_index()
+                method_info = "registros"
             
-            answer = "**📅 Infrações por Ano:**\n\n"
+            answer = f"**📅 Infrações por Ano ({method_info}):**\n\n"
             for year, count in year_counts.tail(5).items():
                 answer += f"• **{int(year)}**: {count:,} infrações\n"
             
@@ -344,9 +367,16 @@ class Chatbot:
             return {"answer": f"❌ Erro ao analisar por ano: {e}", "source": "error"}
     
     def _analyze_totals(self, df: pd.DataFrame, question: str) -> Dict[str, Any]:
-        """Analisa totais gerais."""
+        """Analisa totais gerais usando contagem correta."""
         try:
-            total_records = len(df)
+            # Conta infrações únicas se NUM_AUTO_INFRACAO disponível
+            if 'NUM_AUTO_INFRACAO' in df.columns:
+                total_records = df['NUM_AUTO_INFRACAO'].nunique()
+                records_method = "infrações únicas"
+            else:
+                total_records = len(df)
+                records_method = "registros (pode incluir duplicatas)"
+            
             total_states = df['UF'].nunique() if 'UF' in df.columns else 0
             
             # Usa código do município se disponível (mais preciso)
@@ -361,7 +391,7 @@ class Chatbot:
                 municipality_method = "não disponível"
             
             answer = "**📊 Resumo Geral dos Dados:**\n\n"
-            answer += f"• **Total de infrações**: {total_records:,}\n"
+            answer += f"• **Total de infrações**: {total_records:,} ({records_method})\n"
             answer += f"• **Estados envolvidos**: {total_states}\n"
             answer += f"• **Municípios afetados**: {total_municipalities:,}\n"
             
@@ -453,12 +483,19 @@ class Chatbot:
                 return {"answer": "❌ Coluna de gravidade não encontrada nos dados.", "source": "error"}
             
             df_clean = df[df['GRAVIDADE_INFRACAO'].notna() & (df['GRAVIDADE_INFRACAO'] != '')]
-            gravity_counts = df_clean['GRAVIDADE_INFRACAO'].value_counts()
             
-            answer = "**⚖️ Distribuição por Gravidade das Infrações:**\n\n"
+            # Conta infrações únicas por gravidade se NUM_AUTO_INFRACAO disponível
+            if 'NUM_AUTO_INFRACAO' in df_clean.columns:
+                gravity_counts = df_clean.groupby('GRAVIDADE_INFRACAO')['NUM_AUTO_INFRACAO'].nunique()
+                method_info = "infrações únicas"
+            else:
+                gravity_counts = df_clean['GRAVIDADE_INFRACAO'].value_counts()
+                method_info = "registros"
+            
+            answer = f"**⚖️ Distribuição por Gravidade ({method_info}):**\n\n"
             
             for gravity, count in gravity_counts.items():
-                percentage = (count / len(df_clean)) * 100
+                percentage = (count / gravity_counts.sum()) * 100
                 
                 # Emoji por gravidade
                 if "leve" in gravity.lower():
@@ -472,7 +509,7 @@ class Chatbot:
                 
                 answer += f"{emoji} **{gravity.title()}**: {count:,} infrações ({percentage:.1f}%)\n"
             
-            answer += f"\n📊 Total analisado: {len(df_clean):,} infrações com gravidade definida"
+            answer += f"\n📊 Total analisado: {gravity_counts.sum():,} {method_info}"
             
             # Explicação das gravidades
             answer += "\n\n**ℹ️ Classificação:**\n"
@@ -504,29 +541,47 @@ class Chatbot:
                 '|'.join(flora_terms), case=False, na=False
             )
             
-            fauna_count = fauna_mask.sum()
-            flora_count = flora_mask.sum()
+            # Conta infrações únicas se NUM_AUTO_INFRACAO disponível
+            if 'NUM_AUTO_INFRACAO' in df_clean.columns:
+                fauna_count = df_clean[fauna_mask]['NUM_AUTO_INFRACAO'].nunique()
+                flora_count = df_clean[flora_mask]['NUM_AUTO_INFRACAO'].nunique()
+                method_info = "infrações únicas"
+            else:
+                fauna_count = fauna_mask.sum()
+                flora_count = flora_mask.sum()
+                method_info = "registros"
             
-            answer = "**🌿 Análise de Infrações Fauna e Flora:**\n\n"
+            answer = f"**🌿 Análise de Infrações Fauna e Flora ({method_info}):**\n\n"
             
             if fauna_count > 0:
                 answer += f"🐾 **Infrações contra Fauna**: {fauna_count:,} casos\n"
-                fauna_types = df_clean[fauna_mask]['TIPO_INFRACAO'].value_counts().head(5)
+                if 'NUM_AUTO_INFRACAO' in df_clean.columns:
+                    fauna_types = df_clean[fauna_mask].groupby('TIPO_INFRACAO')['NUM_AUTO_INFRACAO'].nunique().nlargest(5)
+                else:
+                    fauna_types = df_clean[fauna_mask]['TIPO_INFRACAO'].value_counts().head(5)
                 for tipo, count in fauna_types.items():
                     answer += f"   • {tipo.title()}: {count:,}\n"
                 answer += "\n"
             
             if flora_count > 0:
                 answer += f"🌳 **Infrações contra Flora**: {flora_count:,} casos\n"
-                flora_types = df_clean[flora_mask]['TIPO_INFRACAO'].value_counts().head(5)
+                if 'NUM_AUTO_INFRACAO' in df_clean.columns:
+                    flora_types = df_clean[flora_mask].groupby('TIPO_INFRACAO')['NUM_AUTO_INFRACAO'].nunique().nlargest(5)
+                else:
+                    flora_types = df_clean[flora_mask]['TIPO_INFRACAO'].value_counts().head(5)
                 for tipo, count in flora_types.items():
                     answer += f"   • {tipo.title()}: {count:,}\n"
                 answer += "\n"
             
-            other_count = len(df_clean) - fauna_count - flora_count
+            if 'NUM_AUTO_INFRACAO' in df_clean.columns:
+                other_count = df_clean['NUM_AUTO_INFRACAO'].nunique() - fauna_count - flora_count
+            else:
+                other_count = len(df_clean) - fauna_count - flora_count
+            
             answer += f"⚖️ **Outras infrações**: {other_count:,} casos\n"
             
-            answer += f"\n📊 Total analisado: {len(df_clean):,} infrações"
+            total_analyzed = fauna_count + flora_count + other_count
+            answer += f"\n📊 Total analisado: {total_analyzed:,} {method_info}"
             
             return {"answer": answer, "source": "data_analysis"}
             
@@ -607,22 +662,30 @@ class Chatbot:
             if df_people.empty:
                 return {"answer": f"❌ Nenhuma {entity_type.lower()} encontrada para {infraction_type} em {target_uf}.", "source": "error"}
             
-            # Top infratores
+            # Top infratores com contagem correta
             import re
             numbers = re.findall(r'\d+', question_lower)
             top_n = int(numbers[0]) if numbers else 5
             
-            top_offenders = df_people['NOME_INFRATOR'].value_counts().head(top_n)
+            # Conta infrações únicas por infrator se NUM_AUTO_INFRACAO disponível
+            if 'NUM_AUTO_INFRACAO' in df_people.columns:
+                top_offenders = df_people.groupby('NOME_INFRATOR')['NUM_AUTO_INFRACAO'].nunique().nlargest(top_n)
+                method_info = "infrações únicas"
+            else:
+                top_offenders = df_people['NOME_INFRATOR'].value_counts().head(top_n)
+                method_info = "registros"
             
             answer = f"**🎯 Top {top_n} {entity_type} - {infraction_type} em {target_uf}:**\n\n"
             
             for i, (name, count) in enumerate(top_offenders.items(), 1):
                 # Trunca nomes muito longos
                 display_name = name[:50] + "..." if len(name) > 50 else name
-                answer += f"{i}. **{display_name.title()}**: {count:,} infrações\n"
+                suffix = " únicas" if "únicas" in method_info else ""
+                answer += f"{i}. **{display_name.title()}**: {count:,} infrações{suffix}\n"
             
             answer += f"\n📊 Total de {entity_type.lower()}: {df_people['NOME_INFRATOR'].nunique():,}"
             answer += f"\n📊 Total de infrações de {infraction_type}: {len(df_people):,}"
+            answer += f"\n*Método: {method_info}*"
             
             return {"answer": answer, "source": "data_analysis"}
             
@@ -662,21 +725,31 @@ class Chatbot:
             numbers = re.findall(r'\d+', question_lower)
             top_n = int(numbers[0]) if numbers else 10
             
-            top_offenders = df_filtered['NOME_INFRATOR'].value_counts().head(top_n)
+            # Conta infrações únicas por infrator se NUM_AUTO_INFRACAO disponível
+            if 'NUM_AUTO_INFRACAO' in df_filtered.columns:
+                top_offenders = df_filtered.groupby('NOME_INFRATOR')['NUM_AUTO_INFRACAO'].nunique().nlargest(top_n)
+                method_info = "infrações únicas"
+            else:
+                top_offenders = df_filtered['NOME_INFRATOR'].value_counts().head(top_n)
+                method_info = "registros"
             
-            answer = f"**👥 Top {top_n} {entity_type} com Mais Infrações:**\n\n"
+            answer = f"**👥 Top {top_n} {entity_type} com Mais Infrações ({method_info}):**\n\n"
             
             for i, (name, count) in enumerate(top_offenders.items(), 1):
                 # Informações adicionais do infrator
                 offender_data = df_filtered[df_filtered['NOME_INFRATOR'] == name]
-                ufs = offender_data['UF'].unique()
+                ufs = offender_data['UF'].unique() if 'UF' in offender_data.columns else []
                 
                 # Trunca nome se muito longo
                 display_name = name[:40] + "..." if len(name) > 40 else name
                 
                 answer += f"{i}. **{display_name.title()}**\n"
-                answer += f"   • Infrações: {count:,}\n"
-                answer += f"   • Estados: {', '.join(ufs[:3])}{'...' if len(ufs) > 3 else ''}\n\n"
+                suffix = " únicas" if "únicas" in method_info else ""
+                answer += f"   • Infrações: {count:,}{suffix}\n"
+                if len(ufs) > 0:
+                    answer += f"   • Estados: {', '.join(ufs[:3])}{'...' if len(ufs) > 3 else ''}\n\n"
+                else:
+                    answer += "\n"
             
             return {"answer": answer, "source": "data_analysis"}
             
@@ -817,14 +890,26 @@ class Chatbot:
         
         else:
             # Resposta genérica com dados disponíveis
-            total_records = len(df) if not df.empty else 0
-            
-            if total_records > 0:
+            if not df.empty:
+                # Conta infrações únicas se NUM_AUTO_INFRACAO disponível
+                if 'NUM_AUTO_INFRACAO' in df.columns:
+                    total_records = df['NUM_AUTO_INFRACAO'].nunique()
+                    records_type = "infrações únicas"
+                else:
+                    total_records = len(df)
+                    records_type = "registros"
+                
                 total_states = df['UF'].nunique() if 'UF' in df.columns else 0
-                total_municipalities = df['MUNICIPIO'].nunique() if 'MUNICIPIO' in df.columns else 0
+                
+                if 'COD_MUNICIPIO' in df.columns:
+                    total_municipalities = df['COD_MUNICIPIO'].nunique()
+                elif 'MUNICIPIO' in df.columns:
+                    total_municipalities = df['MUNICIPIO'].nunique()
+                else:
+                    total_municipalities = 0
                 
                 answer = f"📊 **Sistema de Análise IBAMA:**\n\n"
-                answer += f"Tenho {total_records:,} registros de infrações ambientais disponíveis para análise.\n\n"
+                answer += f"Tenho {total_records:,} {records_type} disponíveis para análise.\n\n"
                 answer += f"**Dados incluem:**\n"
                 answer += f"• {total_states} estados brasileiros\n"
                 answer += f"• {total_municipalities:,} municípios afetados\n"
@@ -844,6 +929,24 @@ class Chatbot:
                 answer = "❌ Não foi possível carregar os dados para análise."
             
             return {"answer": answer, "source": "data_analysis"}
+    
+    def _add_ai_warning(self, answer: str, source: str) -> str:
+        """Adiciona aviso sobre IA a todas as respostas."""
+        # Sempre adiciona o aviso, independente da fonte
+        warning = "\n\n⚠️ **Aviso Importante:** Todas as respostas precisam ser checadas. Os modelos de IA podem ter erros de alucinação, baixa qualidade em certos pontos, vieses ou problemas éticos."
+        
+        # Adiciona informação sobre a fonte
+        if source == "data_analysis":
+            source_info = "\n\n*💡 Resposta baseada em análise direta dos dados*"
+        elif source == "knowledge_base":
+            source_info = "\n\n*📚 Resposta baseada em conhecimento especializado*"
+        elif source == "llm":
+            model_name = "Llama 3.1" if self.llm_config["provider"] == "groq" else "Gemini 1.5"
+            source_info = f"\n\n*🤖 Resposta gerada por {model_name}*"
+        else:
+            source_info = ""
+        
+        return answer + source_info + warning
     
     def query(self, question: str, provider: str = 'direct') -> Dict[str, Any]:
         """Processa uma pergunta do usuário."""
@@ -883,23 +986,6 @@ class Chatbot:
         if any(keyword in question_lower for keyword in data_keywords):
             return self._answer_with_data_analysis(question)
         
-    def _add_ai_warning(self, answer: str, source: str) -> str:
-        """Adiciona aviso sobre IA a todas as respostas."""
-        # Sempre adiciona o aviso, independente da fonte
-        warning = "\n\n⚠️ **Aviso Importante:** Todas as respostas precisam ser checadas. Os modelos de IA podem ter erros de alucinação, baixa qualidade em certos pontos, vieses ou problemas éticos."
-        
-        # Adiciona informação sobre a fonte
-        if source == "data_analysis":
-            source_info = "\n\n*💡 Resposta baseada em análise direta dos dados*"
-        elif source == "knowledge_base":
-            source_info = "\n\n*📚 Resposta baseada em conhecimento especializado*"
-        elif source == "llm":
-            model_name = "Llama 3.1" if self.llm_config["provider"] == "groq" else "Gemini 1.5"
-            source_info = f"\n\n*🤖 Resposta gerada por {model_name}*"
-        else:
-            source_info = ""
-        
-        return answer + source_info + warning
         # Para perguntas genéricas sobre o sistema, responde diretamente
         if any(keyword in question_lower for keyword in ["o que", "como", "explicar", "definir"]):
             return self._answer_with_data_analysis(question)
