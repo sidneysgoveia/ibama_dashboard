@@ -437,6 +437,7 @@ def main():
         with st.expander("⚠️ Avisos Importantes"):
             st.warning("**Não use IA para escrever um texto inteiro!** Use para resumos e análises que devem ser verificados.")
             st.info("Cheque as informações com os dados originais do Ibama e outras fontes.")
+            st.error("**Modelos de IA podem ter erros, alucinações, vieses ou problemas éticos.** Sempre verifique as respostas!")
 
         with st.expander("ℹ️ Sobre este App"):
             st.markdown("""
