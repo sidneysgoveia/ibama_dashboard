@@ -472,48 +472,179 @@ class DataVisualization:
             st.error(f"Erro no gráfico de gravidade: {e}")
 
     def create_main_offenders_chart_advanced(self, selected_ufs: list, date_filters: dict):
-        """Cria gráfico dos principais infratores com filtros avançados."""
+        """Cria gráficos dos principais infratores separados por pessoas físicas (CPF) e empresas (CNPJ)."""
         try:
             df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
-            if df.empty or 'NOME_INFRATOR' not in df.columns:
+            if df.empty:
                 return
             
-            # Converte valores
-            df['VAL_AUTO_INFRACAO_NUMERIC'] = pd.to_numeric(
-                df['VAL_AUTO_INFRACAO'].astype(str).str.replace(',', '.'), 
-                errors='coerce'
-            )
+            # Verifica se temos as colunas necessárias
+            required_cols = ['NOME_INFRATOR', 'CPF_CNPJ_INFRATOR', 'VAL_AUTO_INFRACAO']
+            if not all(col in df.columns for col in required_cols):
+                st.warning("Colunas necessárias para análise de infratores não encontradas.")
+                return
             
             # Remove valores inválidos
             df_clean = df[
-                df['VAL_AUTO_INFRACAO_NUMERIC'].notna() & 
                 df['NOME_INFRATOR'].notna() & 
-                (df['NOME_INFRATOR'] != '')
-            ]
+                df['CPF_CNPJ_INFRATOR'].notna() &
+                df['VAL_AUTO_INFRACAO'].notna() &
+                (df['NOME_INFRATOR'] != '') & 
+                (df['CPF_CNPJ_INFRATOR'] != '') &
+                (df['VAL_AUTO_INFRACAO'] != '')
+            ].copy()
             
             if df_clean.empty:
+                st.warning("Dados válidos não disponíveis para análise de infratores.")
                 return
             
-            # Top 10 infratores
-            offender_values = df_clean.groupby('NOME_INFRATOR')['VAL_AUTO_INFRACAO_NUMERIC'].sum().nlargest(10)
+            # Converte valores para numérico
+            df_clean['VAL_AUTO_INFRACAO_NUMERIC'] = pd.to_numeric(
+                df_clean['VAL_AUTO_INFRACAO'].astype(str).str.replace(',', '.'), 
+                errors='coerce'
+            )
             
-            if not offender_values.empty:
-                chart_df = pd.DataFrame({
-                    'NOME_INFRATOR': offender_values.index,
-                    'valor_total': offender_values.values
-                })
-                
-                chart_df['NOME_INFRATOR'] = chart_df['NOME_INFRATOR'].str.title().str.slice(0, 40)
-                
-                fig = px.bar(
-                    chart_df.sort_values('valor_total'), 
-                    y='NOME_INFRATOR', 
-                    x='valor_total', 
-                    orientation='h',
-                    title="<b>Top 10 Infratores por Valor de Multa</b>"
-                )
-                st.plotly_chart(fig, use_container_width=True)
+            # Remove valores que não conseguiram ser convertidos
+            df_clean = df_clean[df_clean['VAL_AUTO_INFRACAO_NUMERIC'].notna()]
+            
+            if df_clean.empty:
+                st.warning("Nenhum valor de multa válido encontrado.")
+                return
+            
+            # Função para identificar CPF (formato: XXX.XXX.XXX-XX)
+            def is_cpf(cpf_cnpj):
+                if pd.isna(cpf_cnpj):
+                    return False
+                cpf_cnpj_str = str(cpf_cnpj).strip()
+                # CPF tem 14 caracteres com pontos e hífen: XXX.XXX.XXX-XX
+                if len(cpf_cnpj_str) == 14 and cpf_cnpj_str.count('.') == 2 and cpf_cnpj_str.count('-') == 1:
+                    return True
+                return False
+            
+            # Função para identificar CNPJ (formato: XX.XXX.XXX/XXXX-XX)
+            def is_cnpj(cpf_cnpj):
+                if pd.isna(cpf_cnpj):
+                    return False
+                cpf_cnpj_str = str(cpf_cnpj).strip()
+                # CNPJ tem 18 caracteres com pontos, barra e hífen: XX.XXX.XXX/XXXX-XX
+                if len(cpf_cnpj_str) == 18 and cpf_cnpj_str.count('.') == 2 and cpf_cnpj_str.count('/') == 1 and cpf_cnpj_str.count('-') == 1:
+                    return True
+                return False
+            
+            # Separa pessoas físicas (CPF) e empresas (CNPJ)
+            df_clean['is_cpf'] = df_clean['CPF_CNPJ_INFRATOR'].apply(is_cpf)
+            df_clean['is_cnpj'] = df_clean['CPF_CNPJ_INFRATOR'].apply(is_cnpj)
+            
+            df_pessoas_fisicas = df_clean[df_clean['is_cpf']]
+            df_empresas = df_clean[df_clean['is_cnpj']]
+            
+            # Cria duas colunas para os gráficos
+            col1, col2 = st.columns(2)
+            
+            # Gráfico 1: Top 10 Pessoas Físicas (CPF)
+            with col1:
+                if not df_pessoas_fisicas.empty:
+                    # Agrupa por NOME_INFRATOR e CPF_CNPJ_INFRATOR, soma os valores
+                    pf_grouped = df_pessoas_fisicas.groupby(['NOME_INFRATOR', 'CPF_CNPJ_INFRATOR'])['VAL_AUTO_INFRACAO_NUMERIC'].sum().reset_index()
+                    pf_grouped = pf_grouped.nlargest(10, 'VAL_AUTO_INFRACAO_NUMERIC')
+                    
+                    if not pf_grouped.empty:
+                        # Cria rótulo combinado (nome + CPF mascarado)
+                        pf_grouped['label'] = pf_grouped.apply(
+                            lambda x: f"{x['NOME_INFRATOR'][:30]}{'...' if len(x['NOME_INFRATOR']) > 30 else ''}\n(CPF: {x['CPF_CNPJ_INFRATOR'][:3]}.***.***-{x['CPF_CNPJ_INFRATOR'][-2:]})", 
+                            axis=1
+                        )
+                        
+                        fig_pf = px.bar(
+                            pf_grouped.sort_values('VAL_AUTO_INFRACAO_NUMERIC'), 
+                            y='label', 
+                            x='VAL_AUTO_INFRACAO_NUMERIC', 
+                            orientation='h',
+                            title="<b>Top 10 Pessoas Físicas por Valor de Multa</b>",
+                            labels={'label': 'Pessoa Física', 'VAL_AUTO_INFRACAO_NUMERIC': 'Valor Total (R$)'},
+                            text='VAL_AUTO_INFRACAO_NUMERIC'
+                        )
+                        
+                        # Formata os valores no eixo X como moeda
+                        fig_pf.update_layout(
+                            xaxis_tickformat=',.0f',
+                            height=500,
+                            margin=dict(l=200)  # Mais espaço à esquerda para os nomes
+                        )
+                        
+                        # Formata os textos dos valores
+                        fig_pf.update_traces(
+                            texttemplate='R$ %{x:,.0f}',
+                            textposition='outside'
+                        )
+                        
+                        st.plotly_chart(fig_pf, use_container_width=True)
+                        
+                        # Mostra estatísticas
+                        total_pf = pf_grouped['VAL_AUTO_INFRACAO_NUMERIC'].sum()
+                        st.caption(f"💰 Total: R$ {total_pf:,.2f} | 👥 {len(pf_grouped)} pessoas físicas")
+                    else:
+                        st.info("Nenhuma pessoa física encontrada nos dados filtrados.")
+                else:
+                    st.info("Nenhuma pessoa física encontrada nos dados filtrados.")
+            
+            # Gráfico 2: Top 10 Empresas (CNPJ)
+            with col2:
+                if not df_empresas.empty:
+                    # Agrupa por NOME_INFRATOR e CPF_CNPJ_INFRATOR, soma os valores
+                    empresa_grouped = df_empresas.groupby(['NOME_INFRATOR', 'CPF_CNPJ_INFRATOR'])['VAL_AUTO_INFRACAO_NUMERIC'].sum().reset_index()
+                    empresa_grouped = empresa_grouped.nlargest(10, 'VAL_AUTO_INFRACAO_NUMERIC')
+                    
+                    if not empresa_grouped.empty:
+                        # Cria rótulo combinado (nome + CNPJ mascarado)
+                        empresa_grouped['label'] = empresa_grouped.apply(
+                            lambda x: f"{x['NOME_INFRATOR'][:30]}{'...' if len(x['NOME_INFRATOR']) > 30 else ''}\n(CNPJ: {x['CPF_CNPJ_INFRATOR'][:2]}.***.***/****-{x['CPF_CNPJ_INFRATOR'][-2:]})", 
+                            axis=1
+                        )
+                        
+                        fig_empresa = px.bar(
+                            empresa_grouped.sort_values('VAL_AUTO_INFRACAO_NUMERIC'), 
+                            y='label', 
+                            x='VAL_AUTO_INFRACAO_NUMERIC', 
+                            orientation='h',
+                            title="<b>Top 10 Empresas por Valor de Multa</b>",
+                            labels={'label': 'Empresa', 'VAL_AUTO_INFRACAO_NUMERIC': 'Valor Total (R$)'},
+                            text='VAL_AUTO_INFRACAO_NUMERIC',
+                            color_discrete_sequence=['#ff6b6b']  # Cor diferente para empresas
+                        )
+                        
+                        # Formata os valores no eixo X como moeda
+                        fig_empresa.update_layout(
+                            xaxis_tickformat=',.0f',
+                            height=500,
+                            margin=dict(l=200)  # Mais espaço à esquerda para os nomes
+                        )
+                        
+                        # Formata os textos dos valores
+                        fig_empresa.update_traces(
+                            texttemplate='R$ %{x:,.0f}',
+                            textposition='outside'
+                        )
+                        
+                        st.plotly_chart(fig_empresa, use_container_width=True)
+                        
+                        # Mostra estatísticas
+                        total_empresa = empresa_grouped['VAL_AUTO_INFRACAO_NUMERIC'].sum()
+                        st.caption(f"💰 Total: R$ {total_empresa:,.2f} | 🏢 {len(empresa_grouped)} empresas")
+                    else:
+                        st.info("Nenhuma empresa encontrada nos dados filtrados.")
+                else:
+                    st.info("Nenhuma empresa encontrada nos dados filtrados.")
+            
+            # Estatísticas gerais
+            total_identificados = len(df_pessoas_fisicas) + len(df_empresas)
+            total_nao_identificados = len(df_clean) - total_identificados
+            
+            if total_nao_identificados > 0:
+                st.info(f"📊 **Resumo:** {len(df_pessoas_fisicas)} pessoas físicas, {len(df_empresas)} empresas, {total_nao_identificados} registros com formato de CPF/CNPJ não identificado")
+            else:
+                st.info(f"📊 **Resumo:** {len(df_pessoas_fisicas)} pessoas físicas, {len(df_empresas)} empresas identificadas")
                 
         except Exception as e:
             st.error(f"Erro no gráfico de infratores: {e}")
