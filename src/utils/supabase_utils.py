@@ -97,6 +97,12 @@ class SupabasePaginator:
         print(f"✅ Dados filtrados finais: {len(df):,} registros")
         return df
     
+    # Método para chatbot - cache específico
+    @st.cache_data(ttl=1800)  # 30 minutos
+    def get_chatbot_data(_self) -> pd.DataFrame:
+        """Cache específico para o chatbot, independente dos filtros."""
+        return _self.get_all_records()
+    
     def get_count(self, table_name: str = 'ibama_infracao') -> int:
         """Obtém contagem total rápida usando count API."""
         try:
@@ -109,4 +115,5 @@ class SupabasePaginator:
         """Limpa o cache para forçar nova busca."""
         self.get_all_records.clear()
         self.get_filtered_data.clear()
+        self.get_chatbot_data.clear()
         print("🧹 Cache limpo")
