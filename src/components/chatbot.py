@@ -144,7 +144,10 @@ class Chatbot:
             # Remove valores vazios
             df_clean = df[df['MUNICIPIO'].notna() & (df['MUNICIPIO'] != '')]
             
-            # Conta por município
+            if df_clean.empty:
+                return
+            
+            # Top 10 municípios
             muni_counts = df_clean.groupby(['MUNICIPIO', 'UF']).size().reset_index(name='count')
             muni_counts = muni_counts.sort_values('count', ascending=False)
             
@@ -462,6 +465,8 @@ class Chatbot:
             return {"answer": answer, "source": "data_analysis"}
             
         except Exception as e:
+            return {"answer": f"❌ Erro ao analisar fauna e flora: {e}", "source": "error"}
+    
     def _analyze_specific_region_type(self, df: pd.DataFrame, question: str) -> Dict[str, Any]:
         """Analisa infrações específicas por região e tipo."""
         try:
@@ -773,18 +778,6 @@ class Chatbot:
                 answer = "❌ Não foi possível carregar os dados para análise."
             
             return {"answer": answer, "source": "data_analysis"}
-        """Análise genérica dos dados."""
-        return {
-            "answer": f"📊 Tenho {len(df):,} registros de infrações do IBAMA disponíveis para análise.\n\n" +
-                     "**Posso ajudar com:**\n" +
-                     "• Top estados com mais infrações\n" +
-                     "• Principais municípios afetados\n" +
-                     "• Análise de valores de multas\n" +
-                     "• Tipos de infrações mais comuns\n" +
-                     "• Dados por ano\n\n" +
-                     "**Exemplo:** 'Quais são os 5 estados com mais infrações?'",
-            "source": "data_analysis"
-        }
     
     def query(self, question: str, provider: str = 'direct') -> Dict[str, Any]:
         """Processa uma pergunta do usuário."""
