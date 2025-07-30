@@ -5,7 +5,7 @@ from datetime import datetime
 
 # Configuração otimizada para reduzir uso de recursos
 st.set_page_config(
-    page_title="Análise de Infrações IBAMA", 
+    page_title="Análise de Infrações IBAMA (versão beta)", 
     page_icon="🌳", 
     layout="wide",
     initial_sidebar_state="expanded"
@@ -237,7 +237,7 @@ def format_period_description(selected_periods):
     return "; ".join(descriptions)
 
 def main():
-    st.title("🌳 Análise de Autos de Infração do IBAMA")
+    st.title("🌳 Análise de Autos de Infração do IBAMA (versão beta)")
     
     # Carrega componentes com cache
     Database, LLMIntegration, DataVisualization, Chatbot = load_components()
@@ -412,7 +412,7 @@ def main():
             """)
 
     # Abas principais
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard Interativo", "💬 Chatbot com IA", "🔍 Explorador SQL", "🔧 Diagnóstico"])
+    tab1, tab2, tab3 = st.tabs(["📊 Dashboard Interativo", "💬 Chatbot com IA", "🔍 Explorador SQL"])
     
     with tab1:
         st.header("Dashboard de Análise de Infrações Ambientais")
@@ -578,83 +578,6 @@ def main():
                 if st.button(f"📝 {example}", key=f"example_{hash(example)}"):
                     st.session_state.example_query = example
                     st.rerun()
-    
-    with tab4:
-        st.header("🔧 Diagnóstico do Sistema")
-        st.caption("Identifica problemas de contagem de registros")
-        
-        if st.button("🚀 Executar Diagnóstico", type="primary"):
-            with st.spinner("Executando diagnóstico..."):
-                try:
-                    # Teste 1: Count exato
-                    st.subheader("📊 Testes de Contagem")
-                    
-                    if st.session_state.db.is_cloud and st.session_state.db.supabase:
-                        supabase = st.session_state.db.supabase
-                        
-                        # Count exato
-                        result = supabase.table('ibama_infracao').select('*', count='exact').limit(1).execute()
-                        count_exact = getattr(result, 'count', 0)
-                        
-                        # Busca completa
-                        result_all = supabase.table('ibama_infracao').select('*').execute()
-                        count_all = len(result_all.data) if result_all.data else 0
-                        
-                        # Exibe resultados
-                        col1, col2 = st.columns(2)
-                        col1.metric("Count API", f"{count_exact:,}")
-                        col2.metric("Busca Completa", f"{count_all:,}")
-                        
-                        if count_exact != count_all:
-                            st.warning(f"⚠️ PROBLEMA: API diz {count_exact:,} mas carregou {count_all:,}")
-                        
-                        # Análise por ano
-                        if result_all.data:
-                            df = pd.DataFrame(result_all.data)
-                            st.info(f"DataFrame: {len(df)} registros, {len(df.columns)} colunas")
-                            
-                            if 'DAT_HORA_AUTO_INFRACAO' in df.columns:
-                                df['DAT_HORA_AUTO_INFRACAO'] = pd.to_datetime(df['DAT_HORA_AUTO_INFRACAO'], errors='coerce')
-                                
-                                # Por ano
-                                year_counts = df['DAT_HORA_AUTO_INFRACAO'].dt.year.value_counts().sort_index()
-                                
-                                st.subheader("📅 Registros por Ano")
-                                for year, count in year_counts.tail(6).items():
-                                    if pd.notna(year) and year >= 2020:
-                                        st.write(f"**{int(year)}:** {count:,} registros")
-                                
-                                # Foco 2024-2025
-                                df_recent = df[df['DAT_HORA_AUTO_INFRACAO'].dt.year.isin([2024, 2025])]
-                                
-                                st.subheader("🎯 Simulação Dashboard")
-                                total_infracoes = len(df_recent)
-                                
-                                if total_infracoes == 1000:
-                                    st.error("❌ PROBLEMA CONFIRMADO: Limitado a 1.000 registros")
-                                    st.info("💡 Supabase limita select('*') a 1000 registros por padrão")
-                                elif total_infracoes > 15000:
-                                    st.success(f"✅ Funcionando! {total_infracoes:,} registros")
-                                else:
-                                    st.warning(f"⚠️ Resultado inesperado: {total_infracoes:,} registros")
-                        
-                    else:
-                        st.error("❌ Banco não está em modo cloud ou Supabase não inicializado")
-                        
-                except Exception as e:
-                    st.error(f"❌ Erro no diagnóstico: {e}")
-        
-        # Teste rápido
-        if st.button("⚡ Teste Rápido"):
-            try:
-                if st.session_state.db.is_cloud:
-                    result = st.session_state.db.supabase.table('ibama_infracao').select('*', count='exact').limit(1).execute()
-                    count = getattr(result, 'count', 0)
-                    st.success(f"✅ {count:,} registros na base")
-                else:
-                    st.info("ℹ️ Modo local - não aplicável")
-            except Exception as e:
-                st.error(f"❌ {e}")
 
 if __name__ == "__main__":
     main()
