@@ -161,7 +161,7 @@ class DataVisualization:
     # ======================== MÉTODOS AVANÇADOS ========================
 
     def create_overview_metrics_advanced(self, selected_ufs: list, date_filters: dict):
-        """Cria as métricas de visão geral usando filtros avançados."""
+        """Cria as métricas de visão geral usando filtros avançados e contagem correta."""
         if not self.database:
             st.warning("Banco de dados não disponível.")
             return
@@ -174,8 +174,13 @@ class DataVisualization:
                 st.warning("Nenhum dado encontrado para os filtros selecionados.")
                 return
 
-            # Calcula métricas
-            total_infracoes = len(df)
+            # Calcula métricas usando contagem de infrações únicas
+            if 'NUM_AUTO_INFRACAO' in df.columns:
+                total_infracoes = df['NUM_AUTO_INFRACAO'].nunique()
+                metric_note = "infrações únicas"
+            else:
+                total_infracoes = len(df)
+                metric_note = "registros (pode incluir duplicatas)"
             
             # Valor total das multas
             try:
@@ -205,13 +210,13 @@ class DataVisualization:
             col3.metric("Municípios Afetados", format_number_brazilian(total_municipios))
             
             # Info de debug com descrição dos filtros
-            st.caption(f"📊 Dados processados: {len(df):,} registros | {date_filters['description']}")
+            st.caption(f"📊 Dados processados: {len(df):,} registros | {total_infracoes:,} {metric_note} | {date_filters['description']}")
 
         except Exception as e:
             st.error(f"Erro ao calcular métricas: {e}")
 
     def create_state_distribution_chart_advanced(self, selected_ufs: list, date_filters: dict):
-        """Cria gráfico de distribuição por estado com filtros avançados."""
+        """Cria gráfico de distribuição por estado com contagem correta de infrações."""
         try:
             df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
@@ -219,8 +224,14 @@ class DataVisualization:
                 st.warning("Dados de UF não disponíveis.")
                 return
             
-            # Agrupa por UF
-            uf_counts = df['UF'].value_counts().head(15)
+            # Conta infrações únicas por UF se NUM_AUTO_INFRACAO disponível
+            if 'NUM_AUTO_INFRACAO' in df.columns:
+                uf_counts = df.groupby('UF')['NUM_AUTO_INFRACAO'].nunique().sort_values(ascending=False).head(15)
+                method_note = "infrações únicas"
+            else:
+                # Fallback para contagem de registros
+                uf_counts = df['UF'].value_counts().head(15)
+                method_note = "registros (pode incluir duplicatas)"
             
             if not uf_counts.empty:
                 chart_df = pd.DataFrame({
@@ -234,15 +245,25 @@ class DataVisualization:
                     y='total', 
                     title="<b>Distribuição de Infrações por Estado</b>", 
                     color='total',
-                    labels={'UF': 'Estado', 'total': 'Nº de Infrações'}
+                    labels={'UF': 'Estado', 'total': f'Nº de Infrações ({method_note})'}
                 )
+                
+                # Adiciona nota sobre método
+                fig.add_annotation(
+                    text=f"* Contagem: {method_note}",
+                    xref="paper", yref="paper",
+                    x=1, y=1.02, xanchor='right', yanchor='bottom',
+                    showarrow=False,
+                    font=dict(size=10, color="gray")
+                )
+                
                 st.plotly_chart(fig, use_container_width=True)
                 
         except Exception as e:
             st.error(f"Erro no gráfico de estados: {e}")
 
     def create_municipality_hotspots_chart_advanced(self, selected_ufs: list, date_filters: dict):
-        """Cria gráfico dos municípios com mais infrações usando filtros avançados."""
+        """Cria gráfico dos municípios com mais infrações usando contagem correta por NUM_AUTO_INFRACAO."""
         try:
             df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
@@ -250,72 +271,78 @@ class DataVisualization:
                 st.warning("Dados não disponíveis.")
                 return
             
-            # Verifica se temos código do município
-            if 'COD_MUNICIPIO' in df.columns and 'MUNICIPIO' in df.columns and 'UF' in df.columns:
-                # Remove valores vazios nos campos necessários
-                df_clean = df[
-                    df['COD_MUNICIPIO'].notna() & 
-                    df['MUNICIPIO'].notna() & 
-                    df['UF'].notna() &
-                    (df['COD_MUNICIPIO'] != '') & 
-                    (df['MUNICIPIO'] != '') & 
-                    (df['UF'] != '')
-                ].copy()
+            # Verifica se temos os campos necessários
+            required_fields = ['NUM_AUTO_INFRACAO', 'MUNICIPIO', 'UF']
+            if not all(field in df.columns for field in required_fields):
+                st.warning("Campos necessários para análise de municípios não encontrados.")
+                return
+            
+            # Remove valores vazios nos campos necessários
+            df_clean = df[
+                df['NUM_AUTO_INFRACAO'].notna() & 
+                df['MUNICIPIO'].notna() & 
+                df['UF'].notna() &
+                (df['NUM_AUTO_INFRACAO'] != '') & 
+                (df['MUNICIPIO'] != '') & 
+                (df['UF'] != '')
+            ].copy()
+            
+            if df_clean.empty:
+                st.warning("Dados válidos não disponíveis após limpeza.")
+                return
+            
+            # Método preferido: usar código do município se disponível
+            if 'COD_MUNICIPIO' in df.columns:
+                # Remove códigos vazios
+                df_clean = df_clean[
+                    df_clean['COD_MUNICIPIO'].notna() & 
+                    (df_clean['COD_MUNICIPIO'] != '')
+                ]
                 
                 if df_clean.empty:
-                    st.warning("Dados de município não disponíveis após limpeza.")
+                    st.warning("Códigos de município não disponíveis.")
                     return
                 
-                # Agrupa por código do município (mais confiável) e pega nome e UF
-                # Usa first() para pegar o primeiro nome encontrado para cada código
-                muni_counts = df_clean.groupby('COD_MUNICIPIO').agg({
-                    'MUNICIPIO': 'first',  # Pega o primeiro nome encontrado
-                    'UF': 'first',         # Pega a primeira UF encontrada
-                    'COD_MUNICIPIO': 'count'  # Conta as infrações
-                }).rename(columns={'COD_MUNICIPIO': 'total'})
+                # Conta INFRAÇÕES ÚNICAS por código do município
+                muni_counts = df_clean.groupby(['COD_MUNICIPIO', 'MUNICIPIO', 'UF'])['NUM_AUTO_INFRACAO'].nunique().reset_index()
+                muni_counts.rename(columns={'NUM_AUTO_INFRACAO': 'total_infracoes'}, inplace=True)
+                muni_counts = muni_counts.nlargest(10, 'total_infracoes')
                 
-                muni_counts = muni_counts.reset_index()
-                muni_counts = muni_counts.nlargest(10, 'total')
-                
-            elif 'MUNICIPIO' in df.columns and 'UF' in df.columns:
-                # Fallback para o método anterior se não tiver código
-                st.caption("⚠️ Usando nomes de municípios (podem haver inconsistências)")
-                
-                df_clean = df[df['MUNICIPIO'].notna() & (df['MUNICIPIO'] != '')]
-                
-                if df_clean.empty:
-                    return
-                
-                muni_counts = df_clean.groupby(['MUNICIPIO', 'UF']).size().reset_index(name='total')
-                muni_counts = muni_counts.nlargest(10, 'total')
+                method_note = "* Contagem por código IBGE + infrações únicas"
                 
             else:
-                st.warning("Colunas necessárias para análise de municípios não encontradas.")
-                return
+                # Fallback: usar nome do município
+                st.caption("⚠️ Usando nomes de municípios (podem haver inconsistências)")
+                
+                # Conta INFRAÇÕES ÚNICAS por nome do município
+                muni_counts = df_clean.groupby(['MUNICIPIO', 'UF'])['NUM_AUTO_INFRACAO'].nunique().reset_index()
+                muni_counts.rename(columns={'NUM_AUTO_INFRACAO': 'total_infracoes'}, inplace=True)
+                muni_counts = muni_counts.nlargest(10, 'total_infracoes')
+                
+                method_note = "* Contagem por nome + infrações únicas"
             
             if not muni_counts.empty:
                 # Cria label combinado para exibição
                 muni_counts['local'] = muni_counts['MUNICIPIO'].str.title() + ' (' + muni_counts['UF'] + ')'
                 
                 fig = px.bar(
-                    muni_counts.sort_values('total'), 
+                    muni_counts.sort_values('total_infracoes'), 
                     y='local', 
-                    x='total', 
+                    x='total_infracoes', 
                     orientation='h',
                     title="<b>Top 10 Municípios com Mais Infrações</b>",
-                    labels={'local': 'Município', 'total': 'Nº de Infrações'},
-                    text='total'
+                    labels={'local': 'Município', 'total_infracoes': 'Nº de Infrações Únicas'},
+                    text='total_infracoes'
                 )
                 
                 # Adiciona informação sobre o método usado
-                if 'COD_MUNICIPIO' in df.columns:
-                    fig.add_annotation(
-                        text="* Contagem por código IBGE do município",
-                        xref="paper", yref="paper",
-                        x=1, y=-0.1, xanchor='right', yanchor='top',
-                        showarrow=False,
-                        font=dict(size=10, color="gray")
-                    )
+                fig.add_annotation(
+                    text=method_note,
+                    xref="paper", yref="paper",
+                    x=1, y=-0.1, xanchor='right', yanchor='top',
+                    showarrow=False,
+                    font=dict(size=10, color="gray")
+                )
                 
                 st.plotly_chart(fig, use_container_width=True)
                 
