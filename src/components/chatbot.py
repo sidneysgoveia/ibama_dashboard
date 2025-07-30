@@ -54,8 +54,16 @@ class Chatbot:
             }
         
         try:
+            # Análises específicas por UF e tipo
+            if any(keyword in question_lower for keyword in ["amazonas", "rio grande do sul", "são paulo", "minas gerais"]) and any(keyword in question_lower for keyword in ["pesca", "fauna", "flora"]):
+                return self._analyze_specific_region_type(df, question)
+            
+            # Análises de pessoas físicas vs empresas
+            elif any(keyword in question_lower for keyword in ["pessoas físicas", "empresas", "infrator", "quem mais"]):
+                return self._analyze_top_offenders_detailed(df, question)
+            
             # Respostas para perguntas específicas sobre dados
-            if any(keyword in question_lower for keyword in ["estados", "uf", "5 estados", "top estados"]):
+            elif any(keyword in question_lower for keyword in ["estados", "uf", "5 estados", "top estados"]):
                 return self._analyze_top_states(df, question)
             
             elif any(keyword in question_lower for keyword in ["municípios", "cidades", "top municípios"]):
@@ -64,14 +72,18 @@ class Chatbot:
             elif any(keyword in question_lower for keyword in ["valor", "multa", "total", "dinheiro"]):
                 return self._analyze_fines(df, question)
             
-            elif any(keyword in question_lower for keyword in ["tipo", "infração", "categoria"]):
+            elif any(keyword in question_lower for keyword in ["tipo", "infração", "categoria"]) and "o que" not in question_lower:
                 return self._analyze_infraction_types(df, question)
             
             elif any(keyword in question_lower for keyword in ["ano", "tempo", "período", "quando"]):
                 return self._analyze_by_year(df, question)
             
-            elif any(keyword in question_lower for keyword in ["total", "quantos", "número"]):
+            elif any(keyword in question_lower for keyword in ["total", "quantos", "número"]) and "o que" not in question_lower:
                 return self._analyze_totals(df, question)
+            
+            # Explicações conceituais (não análise de dados)
+            elif any(keyword in question_lower for keyword in ["o que é", "o que são", "definir", "explicar"]):
+                return self._explain_concepts_or_entities(question)
             
             # Respostas sobre conceitos específicos do IBAMA
             elif any(keyword in question_lower for keyword in ["biopirataria", "org. gen.", "modificação genética", "organismo"]):
@@ -80,7 +92,7 @@ class Chatbot:
             elif any(keyword in question_lower for keyword in ["gravidade", "multa leve", "multa grave"]):
                 return self._analyze_gravity(df, question)
             
-            elif any(keyword in question_lower for keyword in ["fauna", "flora", "animal", "planta"]):
+            elif any(keyword in question_lower for keyword in ["fauna", "flora", "animal", "planta"]) and "o que" not in question_lower:
                 return self._analyze_fauna_flora(df, question)
             
             else:
@@ -450,7 +462,225 @@ class Chatbot:
             return {"answer": answer, "source": "data_analysis"}
             
         except Exception as e:
-            return {"answer": f"❌ Erro ao analisar fauna/flora: {e}", "source": "error"}
+    def _analyze_specific_region_type(self, df: pd.DataFrame, question: str) -> Dict[str, Any]:
+        """Analisa infrações específicas por região e tipo."""
+        try:
+            question_lower = question.lower()
+            
+            # Identifica UF
+            uf_map = {
+                "amazonas": "AM", "rio grande do sul": "RS", "são paulo": "SP", 
+                "minas gerais": "MG", "bahia": "BA", "paraná": "PR"
+            }
+            
+            target_uf = None
+            for state_name, uf_code in uf_map.items():
+                if state_name in question_lower:
+                    target_uf = uf_code
+                    break
+            
+            if not target_uf:
+                return {"answer": "❌ Estado não identificado na pergunta.", "source": "error"}
+            
+            # Filtra por UF
+            df_uf = df[df['UF'] == target_uf] if 'UF' in df.columns else df
+            
+            if df_uf.empty:
+                return {"answer": f"❌ Nenhum registro encontrado para {target_uf}.", "source": "error"}
+            
+            # Identifica tipo de infração
+            infraction_type = None
+            if "pesca" in question_lower:
+                df_filtered = df_uf[df_uf['TIPO_INFRACAO'].str.contains('pesca', case=False, na=False)]
+                infraction_type = "Pesca"
+            elif "fauna" in question_lower:
+                df_filtered = df_uf[df_uf['TIPO_INFRACAO'].str.contains('fauna', case=False, na=False)]
+                infraction_type = "Fauna"
+            elif "flora" in question_lower:
+                df_filtered = df_uf[df_uf['TIPO_INFRACAO'].str.contains('flora', case=False, na=False)]
+                infraction_type = "Flora"
+            else:
+                df_filtered = df_uf
+                infraction_type = "Todas"
+            
+            if df_filtered.empty:
+                return {"answer": f"❌ Nenhuma infração de {infraction_type} encontrada em {target_uf}.", "source": "error"}
+            
+            # Filtra por ano se especificado
+            if "2024" in question_lower:
+                df_filtered['DATE'] = pd.to_datetime(df_filtered['DAT_HORA_AUTO_INFRACAO'], errors='coerce')
+                df_filtered = df_filtered[df_filtered['DATE'].dt.year == 2024]
+            
+            if df_filtered.empty:
+                return {"answer": f"❌ Nenhum registro encontrado para os critérios especificados.", "source": "error"}
+            
+            # Analisa infratores
+            if 'NOME_INFRATOR' not in df_filtered.columns:
+                return {"answer": "❌ Coluna de infratores não encontrada.", "source": "error"}
+            
+            # Identifica se quer pessoas físicas ou empresas
+            if "pessoas físicas" in question_lower:
+                # Filtra pessoas físicas (heurística: nomes com espaços, sem LTDA/SA)
+                mask = ~df_filtered['NOME_INFRATOR'].str.contains(r'(LTDA|S\.A\.|S/A|EMPRESA|CIA|COMPANHIA)', case=False, na=False)
+                df_people = df_filtered[mask & df_filtered['NOME_INFRATOR'].str.contains(' ', na=False)]
+                entity_type = "Pessoas Físicas"
+            elif "empresas" in question_lower:
+                # Filtra empresas (contém LTDA, SA, etc.)
+                mask = df_filtered['NOME_INFRATOR'].str.contains(r'(LTDA|S\.A\.|S/A|EMPRESA|CIA|COMPANHIA)', case=False, na=False)
+                df_people = df_filtered[mask]
+                entity_type = "Empresas"
+            else:
+                df_people = df_filtered
+                entity_type = "Infratores"
+            
+            if df_people.empty:
+                return {"answer": f"❌ Nenhuma {entity_type.lower()} encontrada para {infraction_type} em {target_uf}.", "source": "error"}
+            
+            # Top infratores
+            import re
+            numbers = re.findall(r'\d+', question_lower)
+            top_n = int(numbers[0]) if numbers else 5
+            
+            top_offenders = df_people['NOME_INFRATOR'].value_counts().head(top_n)
+            
+            answer = f"**🎯 Top {top_n} {entity_type} - {infraction_type} em {target_uf}:**\n\n"
+            
+            for i, (name, count) in enumerate(top_offenders.items(), 1):
+                # Trunca nomes muito longos
+                display_name = name[:50] + "..." if len(name) > 50 else name
+                answer += f"{i}. **{display_name.title()}**: {count:,} infrações\n"
+            
+            answer += f"\n📊 Total de {entity_type.lower()}: {df_people['NOME_INFRATOR'].nunique():,}"
+            answer += f"\n📊 Total de infrações de {infraction_type}: {len(df_people):,}"
+            
+            return {"answer": answer, "source": "data_analysis"}
+            
+        except Exception as e:
+            return {"answer": f"❌ Erro na análise específica: {e}", "source": "error"}
+    
+    def _analyze_top_offenders_detailed(self, df: pd.DataFrame, question: str) -> Dict[str, Any]:
+        """Análise detalhada de infratores."""
+        try:
+            question_lower = question.lower()
+            
+            if 'NOME_INFRATOR' not in df.columns:
+                return {"answer": "❌ Coluna de infratores não encontrada.", "source": "error"}
+            
+            df_clean = df[df['NOME_INFRATOR'].notna() & (df['NOME_INFRATOR'] != '')]
+            
+            # Determina se quer pessoas físicas ou empresas
+            if "pessoas físicas" in question_lower:
+                # Heurística para pessoas físicas
+                mask = ~df_clean['NOME_INFRATOR'].str.contains(r'(LTDA|S\.A\.|S/A|EMPRESA|CIA|COMPANHIA)', case=False, na=False)
+                df_filtered = df_clean[mask & df_clean['NOME_INFRATOR'].str.contains(' ', na=False)]
+                entity_type = "Pessoas Físicas"
+            elif "empresas" in question_lower:
+                # Heurística para empresas
+                mask = df_clean['NOME_INFRATOR'].str.contains(r'(LTDA|S\.A\.|S/A|EMPRESA|CIA|COMPANHIA)', case=False, na=False)
+                df_filtered = df_clean[mask]
+                entity_type = "Empresas"
+            else:
+                df_filtered = df_clean
+                entity_type = "Infratores"
+            
+            if df_filtered.empty:
+                return {"answer": f"❌ Nenhuma {entity_type.lower()} encontrada.", "source": "error"}
+            
+            # Top N
+            import re
+            numbers = re.findall(r'\d+', question_lower)
+            top_n = int(numbers[0]) if numbers else 10
+            
+            top_offenders = df_filtered['NOME_INFRATOR'].value_counts().head(top_n)
+            
+            answer = f"**👥 Top {top_n} {entity_type} com Mais Infrações:**\n\n"
+            
+            for i, (name, count) in enumerate(top_offenders.items(), 1):
+                # Informações adicionais do infrator
+                offender_data = df_filtered[df_filtered['NOME_INFRATOR'] == name]
+                ufs = offender_data['UF'].unique()
+                
+                # Trunca nome se muito longo
+                display_name = name[:40] + "..." if len(name) > 40 else name
+                
+                answer += f"{i}. **{display_name.title()}**\n"
+                answer += f"   • Infrações: {count:,}\n"
+                answer += f"   • Estados: {', '.join(ufs[:3])}{'...' if len(ufs) > 3 else ''}\n\n"
+            
+            return {"answer": answer, "source": "data_analysis"}
+            
+        except Exception as e:
+            return {"answer": f"❌ Erro na análise de infratores: {e}", "source": "error"}
+    
+    def _explain_concepts_or_entities(self, question: str) -> Dict[str, Any]:
+        """Explica conceitos ou entidades específicas."""
+        question_lower = question.lower()
+        
+        if "vale" in question_lower:
+            return {
+                "answer": """**⛰️ Vale S.A.:**
+
+**Nome oficial:** Vale S.A. (antiga Companhia Vale do Rio Doce)
+
+**Sobre a empresa:**
+• Uma das maiores mineradoras do mundo
+• Maior produtora de minério de ferro e níquel
+• Fundada em 1942, privatizada em 1997
+• Sede no Rio de Janeiro
+
+**Relação com o IBAMA:**
+• Licenciamento de projetos de mineração
+• Monitoramento de impactos ambientais
+• Fiscalização de barragens de rejeitos
+• Controle de desmatamento e recuperação
+
+**Principais questões ambientais:**
+• Rompimento de barragens (Mariana 2015, Brumadinho 2019)
+• Impactos na qualidade da água
+• Desmatamento para mineração
+• Poluição do ar por particulados
+
+*A Vale frequentemente aparece em processos do IBAMA devido ao porte de suas operações de mineração e histórico de acidentes ambientais.*""",
+                "source": "knowledge_base"
+            }
+        
+        elif "infrações contra fauna" in question_lower:
+            return {
+                "answer": """**🐾 Infrações Contra a Fauna:**
+
+**Definição:** Crimes que prejudicam animais silvestres e seus habitats naturais.
+
+**Principais tipos:**
+• **Caça ilegal:** Abate de animais protegidos
+• **Captura:** Retirada de animais da natureza
+• **Comercialização:** Venda de animais ou produtos
+• **Maus-tratos:** Ferimentos ou morte de animais
+• **Destruição de habitat:** Alteração de áreas de reprodução
+
+**Exemplos específicos:**
+• Caça de onças, jaguatiricas, aves raras
+• Captura de papagaios, araras, tucanos
+• Pesca predatória e em locais proibidos
+• Comercialização de peles, penas, carne
+• Destruição de ninhos e criadouros
+
+**Penalidades (Lei 9.605/98):**
+• Multa: R$ 500 a R$ 5.000 por espécime
+• Detenção: 6 meses a 1 ano
+• Apreensão dos animais
+• Reparação de danos ambientais
+
+**Agravantes:**
+• Espécies ameaçadas de extinção
+• Períodos de reprodução
+• Uso de métodos cruéis
+• Finalidade comercial""",
+                "source": "knowledge_base"
+            }
+        
+        else:
+            # Chama o método original para outros conceitos
+            return self._explain_concepts(question)
     
     def _analyze_general(self, df: pd.DataFrame, question: str) -> Dict[str, Any]:
         """Análise genérica dos dados ou responde perguntas gerais."""
@@ -568,7 +798,9 @@ class Chatbot:
             "biopirataria", "org. gen.", "modificação genética", "organismo",
             "gravidade", "leve", "grave", "gravíssima", "fauna", "flora", 
             "animal", "planta", "ibama", "ambiental", "petrobras", "empresa",
-            "pessoa", "infrator", "quem", "qual", "o que é"
+            "pessoa", "infrator", "quem", "qual", "o que é", "vale", "mineradora",
+            "pesca", "amazonas", "rio grande do sul", "pessoas físicas", "empresas",
+            "infrações contra", "conceito", "definição"
         ]
         
         # Palavras que realmente precisam de busca web
@@ -659,10 +891,9 @@ class Chatbot:
             st.write("**📊 Análise de Dados:**")
             data_questions = [
                 "Quais são os 5 estados com mais infrações?",
-                "Quais os principais municípios afetados?", 
-                "Qual o valor total das multas?",
                 "A maior multa foi de qual pessoa ou empresa?",
-                "Como está a distribuição por gravidade?"
+                "Top 5 pessoas físicas com mais infrações por Pesca no Amazonas",
+                "Top 5 empresas com mais infrações por Fauna no RS em 2024"
             ]
             
             for question in data_questions:
@@ -672,8 +903,8 @@ class Chatbot:
             st.write("**🧬 Conceitos e Entidades:**")
             concept_questions = [
                 "O que é biopirataria?",
-                "O que é Org. Gen. Modific.?",
-                "O que é a Petrobras?",
+                "O que é a Vale?",
+                "O que são infrações contra fauna?",
                 "Como funciona o IBAMA?"
             ]
             
