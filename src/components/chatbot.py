@@ -172,27 +172,64 @@ class Chatbot:
             if df_valid.empty:
                 return {"answer": "❌ Nenhum valor válido encontrado.", "source": "error"}
             
-            # Estatísticas
-            total_value = df_valid['VAL_NUMERIC'].sum()
-            avg_value = df_valid['VAL_NUMERIC'].mean()
-            max_value = df_valid['VAL_NUMERIC'].max()
+            # Verifica se a pergunta é específica sobre a maior multa
+            question_lower = question.lower()
+            if any(keyword in question_lower for keyword in ["maior multa", "quem", "pessoa", "empresa", "infrator"]):
+                # Encontra a maior multa e quem foi multado
+                max_idx = df_valid['VAL_NUMERIC'].idxmax()
+                max_row = df_valid.loc[max_idx]
+                max_value = max_row['VAL_NUMERIC']
+                
+                # Informações do infrator
+                infrator = max_row.get('NOME_INFRATOR', 'Não informado')
+                uf = max_row.get('UF', 'N/A')
+                municipio = max_row.get('MUNICIPIO', 'N/A')
+                tipo_infracao = max_row.get('TIPO_INFRACAO', 'Não especificado')
+                data = max_row.get('DAT_HORA_AUTO_INFRACAO', 'N/A')
+                
+                def format_currency(value):
+                    if value >= 1_000_000_000:
+                        return f"R$ {value/1_000_000_000:.1f} bilhões"
+                    elif value >= 1_000_000:
+                        return f"R$ {value/1_000_000:.1f} milhões"
+                    else:
+                        return f"R$ {value:,.2f}"
+                
+                answer = f"**💰 Maior Multa Aplicada:**\n\n"
+                answer += f"• **Valor**: {format_currency(max_value)}\n"
+                answer += f"• **Infrator**: {infrator}\n"
+                answer += f"• **Local**: {municipio} - {uf}\n"
+                answer += f"• **Tipo de Infração**: {tipo_infracao}\n"
+                if data != 'N/A':
+                    try:
+                        data_formatada = pd.to_datetime(data).strftime('%d/%m/%Y')
+                        answer += f"• **Data**: {data_formatada}\n"
+                    except:
+                        answer += f"• **Data**: {data}\n"
+                
+                return {"answer": answer, "source": "data_analysis"}
             
-            # Formata valores
-            def format_currency(value):
-                if value >= 1_000_000_000:
-                    return f"R$ {value/1_000_000_000:.1f} bilhões"
-                elif value >= 1_000_000:
-                    return f"R$ {value/1_000_000:.1f} milhões"
-                else:
-                    return f"R$ {value:,.2f}"
-            
-            answer = f"**💰 Análise de Valores de Multas:**\n\n"
-            answer += f"• **Total**: {format_currency(total_value)}\n"
-            answer += f"• **Média por infração**: {format_currency(avg_value)}\n"
-            answer += f"• **Maior multa**: {format_currency(max_value)}\n"
-            answer += f"• **Infrações com valor**: {len(df_valid):,} de {len(df):,}\n"
-            
-            return {"answer": answer, "source": "data_analysis"}
+            else:
+                # Análise geral dos valores
+                total_value = df_valid['VAL_NUMERIC'].sum()
+                avg_value = df_valid['VAL_NUMERIC'].mean()
+                max_value = df_valid['VAL_NUMERIC'].max()
+                
+                def format_currency(value):
+                    if value >= 1_000_000_000:
+                        return f"R$ {value/1_000_000_000:.1f} bilhões"
+                    elif value >= 1_000_000:
+                        return f"R$ {value/1_000_000:.1f} milhões"
+                    else:
+                        return f"R$ {value:,.2f}"
+                
+                answer = f"**💰 Análise de Valores de Multas:**\n\n"
+                answer += f"• **Total**: {format_currency(total_value)}\n"
+                answer += f"• **Média por infração**: {format_currency(avg_value)}\n"
+                answer += f"• **Maior multa**: {format_currency(max_value)}\n"
+                answer += f"• **Infrações com valor**: {len(df_valid):,} de {len(df):,}\n"
+                
+                return {"answer": answer, "source": "data_analysis"}
             
         except Exception as e:
             return {"answer": f"❌ Erro ao analisar valores: {e}", "source": "error"}
@@ -414,6 +451,98 @@ class Chatbot:
             
         except Exception as e:
             return {"answer": f"❌ Erro ao analisar fauna/flora: {e}", "source": "error"}
+    
+    def _analyze_general(self, df: pd.DataFrame, question: str) -> Dict[str, Any]:
+        """Análise genérica dos dados ou responde perguntas gerais."""
+        question_lower = question.lower()
+        
+        # Perguntas sobre entidades específicas
+        if "petrobras" in question_lower:
+            return {
+                "answer": """**🛢️ Petrobras:**
+
+**Nome oficial:** Petróleo Brasileiro S.A.
+
+**Sobre a empresa:**
+• Maior empresa do Brasil e uma das maiores petrolíferas do mundo
+• Sociedade anônima de capital misto (pública e privada)
+• Fundada em 1953 pelo presidente Getúlio Vargas
+• Atua em exploração, produção, refino e distribuição de petróleo
+
+**Relação com o IBAMA:**
+• Licenciamento ambiental para exploração de petróleo
+• Monitoramento de impactos ambientais
+• Fiscalização de vazamentos e acidentes
+• Controle de atividades offshore (mar)
+
+**Principais questões ambientais:**
+• Vazamentos de óleo
+• Impactos na fauna marinha
+• Licenciamento de plataformas
+• Recuperação de áreas degradadas
+
+*A Petrobras frequentemente aparece em processos do IBAMA devido ao porte de suas operações e potencial impacto ambiental.*""",
+                "source": "knowledge_base"
+            }
+        
+        elif "ibama" in question_lower:
+            return {
+                "answer": """**🌳 Instituto Brasileiro do Meio Ambiente (IBAMA):**
+
+**Criação:** 1989, pela Lei 7.735
+
+**Missão:** Proteger o meio ambiente e promover o desenvolvimento sustentável
+
+**Principais funções:**
+• Fiscalização ambiental
+• Licenciamento de atividades
+• Proteção da fauna e flora
+• Controle de produtos químicos
+• Gestão de unidades de conservação
+
+**Tipos de infração:**
+• Contra a fauna (caça, pesca ilegal)
+• Contra a flora (desmatamento)
+• Poluição (água, ar, solo)
+• Atividades sem licença
+
+**Penalidades:**
+• Multas de R$ 50 a R$ 50 milhões
+• Apreensão de produtos
+• Embargo de atividades
+• Recuperação de danos""",
+                "source": "knowledge_base"
+            }
+        
+        else:
+            # Resposta genérica com dados disponíveis
+            total_records = len(df) if not df.empty else 0
+            
+            if total_records > 0:
+                total_states = df['UF'].nunique() if 'UF' in df.columns else 0
+                total_municipalities = df['MUNICIPIO'].nunique() if 'MUNICIPIO' in df.columns else 0
+                
+                answer = f"📊 **Sistema de Análise IBAMA:**\n\n"
+                answer += f"Tenho {total_records:,} registros de infrações ambientais disponíveis para análise.\n\n"
+                answer += f"**Dados incluem:**\n"
+                answer += f"• {total_states} estados brasileiros\n"
+                answer += f"• {total_municipalities:,} municípios afetados\n"
+                answer += f"• Período: 2024-2025\n"
+                answer += f"• Valores de multas, tipos de infração, gravidade\n\n"
+                
+                answer += f"**Posso ajudar com:**\n"
+                answer += f"• Análise por estado/município\n"
+                answer += f"• Valores e estatísticas de multas\n"
+                answer += f"• Tipos de infrações mais comuns\n"
+                answer += f"• Distribuição por gravidade\n"
+                answer += f"• Conceitos ambientais (biopirataria, OGMs)\n"
+                answer += f"• Informações sobre IBAMA e legislação\n\n"
+                
+                answer += f"**Exemplo:** 'Quais são os 5 estados com mais infrações?'"
+            else:
+                answer = "❌ Não foi possível carregar os dados para análise."
+            
+            return {"answer": answer, "source": "data_analysis"}
         """Análise genérica dos dados."""
         return {
             "answer": f"📊 Tenho {len(df):,} registros de infrações do IBAMA disponíveis para análise.\n\n" +
@@ -438,7 +567,8 @@ class Chatbot:
             "tipo", "infração", "ano", "total", "quantos", "top", "maior", "menor",
             "biopirataria", "org. gen.", "modificação genética", "organismo",
             "gravidade", "leve", "grave", "gravíssima", "fauna", "flora", 
-            "animal", "planta", "ibama", "ambiental"
+            "animal", "planta", "ibama", "ambiental", "petrobras", "empresa",
+            "pessoa", "infrator", "quem", "qual", "o que é"
         ]
         
         # Palavras que realmente precisam de busca web
@@ -531,7 +661,7 @@ class Chatbot:
                 "Quais são os 5 estados com mais infrações?",
                 "Quais os principais municípios afetados?", 
                 "Qual o valor total das multas?",
-                "Quais os tipos de infrações mais comuns?",
+                "A maior multa foi de qual pessoa ou empresa?",
                 "Como está a distribuição por gravidade?"
             ]
             
@@ -539,12 +669,12 @@ class Chatbot:
                 if st.button(question, key=f"data_{hash(question)}"):
                     self._handle_sample_question(question)
             
-            st.write("**🧬 Conceitos Ambientais:**")
+            st.write("**🧬 Conceitos e Entidades:**")
             concept_questions = [
                 "O que é biopirataria?",
                 "O que é Org. Gen. Modific.?",
-                "Como funcionam as multas por gravidade?",
-                "Quais infrações afetam fauna e flora?"
+                "O que é a Petrobras?",
+                "Como funciona o IBAMA?"
             ]
             
             for question in concept_questions:
