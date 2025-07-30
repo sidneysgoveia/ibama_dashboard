@@ -6,6 +6,19 @@ class Chatbot:
     def __init__(self, llm_integration=None):
         self.llm_integration = llm_integration
         self.cached_data = None  # Cache local dos dados
+        self.llm_config = {
+            "provider": "groq",
+            "temperature": 0.0,
+            "max_tokens": 500
+        }
+        
+    def set_llm_config(self, provider="groq", temperature=0.0, max_tokens=500):
+        """Define configurações do LLM."""
+        self.llm_config = {
+            "provider": provider,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
         
     def initialize_chat_state(self):
         """Inicializa o estado do chat."""
@@ -806,7 +819,7 @@ class Chatbot:
         if any(keyword in question_lower for keyword in web_keywords):
             if self.llm_integration:
                 try:
-                    return self.llm_integration.query(question, provider)
+                    return self.llm_integration.query(question, self.llm_config["provider"])
                 except Exception as e:
                     return {
                         "answer": f"❌ Busca na internet não disponível: {str(e)}",
@@ -838,10 +851,23 @@ class Chatbot:
     def display_chat_interface(self):
         """Exibe a interface do chatbot."""
         
-        # Botão para limpar cache
-        if st.button("🔄 Recarregar Dados", help="Limpa cache e recarrega dados"):
-            self.cached_data = None
-            st.success("Cache limpo! Próxima consulta carregará dados atualizados.")
+        # Header com informações do modelo atual
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            st.subheader("💬 Chatbot Inteligente")
+        
+        with col2:
+            # Indicador do modelo atual
+            model_emoji = "🦙" if self.llm_config["provider"] == "groq" else "💎"
+            model_name = "Llama 3.1" if self.llm_config["provider"] == "groq" else "Gemini 1.5"
+            st.caption(f"{model_emoji} Usando: {model_name}")
+        
+        with col3:
+            # Botão para limpar cache
+            if st.button("🔄 Recarregar", help="Limpa cache e recarrega dados"):
+                self.cached_data = None
+                st.success("Cache limpo!")
         
         # Histórico de mensagens
         for message in st.session_state.messages:
@@ -857,7 +883,8 @@ class Chatbot:
             
             # Processa resposta
             with st.chat_message("assistant"):
-                with st.spinner("🤖 A IA está analisando os dados..."):
+                model_emoji = "🦙" if self.llm_config["provider"] == "groq" else "💎"
+                with st.spinner(f"{model_emoji} A IA está analisando os dados..."):
                     try:
                         response = self.query(prompt)
                         answer = response.get("answer", "❌ Não foi possível processar sua pergunta.")
@@ -865,6 +892,9 @@ class Chatbot:
                         # Adiciona informação sobre a fonte
                         if response.get("source") == "data_analysis":
                             answer += "\n\n*💡 Resposta baseada em análise direta dos dados*"
+                        elif response.get("source") == "llm":
+                            model_name = "Llama 3.1" if self.llm_config["provider"] == "groq" else "Gemini 1.5"
+                            answer += f"\n\n*🤖 Resposta gerada por {model_name}*"
                         
                         st.markdown(answer)
                         
