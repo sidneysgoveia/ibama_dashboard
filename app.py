@@ -237,7 +237,7 @@ def format_period_description(selected_periods):
     return "; ".join(descriptions)
 
 def main():
-    st.title("🌳 Análise de Autos de Infração do IBAMA")
+    st.title("🌳 Análise de Autos de Infração do IBAMA (versão beta)")
     
     # Carrega componentes com cache
     Database, LLMIntegration, DataVisualization, Chatbot = load_components()
