@@ -5,7 +5,7 @@ from datetime import datetime
 
 # Configuração otimizada para reduzir uso de recursos
 st.set_page_config(
-    page_title="Análise de Infrações IBAMA (versão beta)", 
+    page_title="Análise de Infrações IBAMA", 
     page_icon="🌳", 
     layout="wide",
     initial_sidebar_state="expanded"
@@ -237,7 +237,7 @@ def format_period_description(selected_periods):
     return "; ".join(descriptions)
 
 def main():
-    st.title("🌳 Análise de Autos de Infração do IBAMA (versão beta)")
+    st.title("🌳 Análise de Autos de Infração do IBAMA")
     
     # Carrega componentes com cache
     Database, LLMIntegration, DataVisualization, Chatbot = load_components()
@@ -408,7 +408,7 @@ def main():
             st.markdown("""
                 **Fonte:** [Portal de Dados Abertos do IBAMA](https://dadosabertos.ibama.gov.br/dataset/fiscalizacao-auto-de-infracao)
                 
-                **Desenvolvido por:** Reinaldo Chaves
+                **Desenvolvido por:** Reinaldo Chaves - [GitHub](https://github.com/reichaves/ibama_dashboard)
             """)
 
     # Abas principais
@@ -416,7 +416,7 @@ def main():
     
     with tab1:
         st.header("Dashboard de Análise de Infrações Ambientais")
-        st.caption("Use os filtros na barra lateral para explorar os dados. Sem repetir NUM_AUTO_INFRACAO")
+        st.caption("Use os filtros na barra lateral para explorar os dados.")
         
         try:
             # Passa os novos filtros para as visualizações
