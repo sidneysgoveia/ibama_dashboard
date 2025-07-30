@@ -367,6 +367,64 @@ def main():
             st.info("**Estados:** Todos")
 
         st.divider()
+        
+        # ======================== FILTROS DO LLM ========================
+        st.subheader("🤖 Configurações de IA")
+        
+        # Seleção do provedor de LLM
+        llm_provider = st.selectbox(
+            "Modelo de IA:",
+            options=["groq", "gemini"],
+            index=0,
+            format_func=lambda x: {
+                "groq": "🦙 Llama 3.1 70B (Groq) - Rápido",
+                "gemini": "💎 Gemini 1.5 Pro (Google) - Avançado"
+            }.get(x, x),
+            help="Escolha o modelo de IA para geração de SQL e análises"
+        )
+        
+        # Configurações avançadas do LLM (opcional)
+        with st.expander("⚙️ Configurações Avançadas"):
+            temperature = st.slider(
+                "Criatividade (Temperature):",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.0,
+                step=0.1,
+                help="0 = Mais preciso e determinístico, 1 = Mais criativo"
+            )
+            
+            max_tokens = st.slider(
+                "Máximo de Tokens:",
+                min_value=100,
+                max_value=2000,
+                value=500,
+                step=100,
+                help="Limite de tokens para as respostas do LLM"
+            )
+            
+            # Informações sobre os modelos
+            if llm_provider == "groq":
+                st.info("🦙 **Llama 3.1 70B:** Modelo open-source rápido e eficiente para análise de dados")
+            else:
+                st.info("💎 **Gemini 1.5 Pro:** Modelo avançado do Google com melhor compreensão de contexto")
+        
+        # Status das APIs
+        st.subheader("📡 Status das APIs")
+        
+        # Verifica status do Groq
+        groq_status = "✅ Conectado" if st.session_state.llm.groq_client else "❌ Não configurado"
+        st.write(f"**Groq API:** {groq_status}")
+        
+        # Verifica status do Gemini
+        gemini_status = "✅ Conectado" if st.session_state.llm.gemini_model else "❌ Não configurado"
+        st.write(f"**Gemini API:** {gemini_status}")
+        
+        # Aviso se nenhuma API estiver disponível
+        if not st.session_state.llm.groq_client and not st.session_state.llm.gemini_model:
+            st.error("⚠️ Nenhuma API de IA configurada! O chatbot funcionará em modo limitado.")
+        
+        st.divider()
         st.info("Os dados são atualizados diariamente.")
         
         # Sample questions do chatbot
