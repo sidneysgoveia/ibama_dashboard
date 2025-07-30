@@ -484,27 +484,130 @@ def main():
     
     with tab2:
         try:
+            # Passa as configurações do LLM para o chatbot
+            if hasattr(st.session_state.chatbot, 'set_llm_config'):
+                st.session_state.chatbot.set_llm_config(
+                    provider=llm_provider,
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
+            
             st.session_state.chatbot.display_chat_interface()
         except Exception as e:
             st.error(f"Erro no chatbot: {e}")
     
     with tab3:
         st.header("Explorador de Dados SQL")
-        query = st.text_area(
-            "Escreva sua consulta SQL (apenas SELECT)", 
-            value="SELECT * FROM ibama_infracao LIMIT 10", 
-            height=150
-        )
         
-        if st.button("Executar Consulta"):
-            if query.strip().lower().startswith("select"):
-                try:
-                    df = st.session_state.db.execute_query(query)
-                    st.dataframe(df)
-                except Exception as e:
-                    st.error(f"Erro na consulta: {e}")
-            else:
-                st.error("Apenas consultas SELECT são permitidas por segurança.")
+        # Opção de usar IA para gerar SQL
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            query_mode = st.radio(
+                "Modo de consulta:",
+                ["Manual", "Gerar com IA"],
+                horizontal=True,
+                help="Escolha entre escrever SQL manualmente ou gerar com IA"
+            )
+        
+        with col2:
+            if query_mode == "Gerar com IA":
+                st.write(f"🤖 Usando: {llm_provider}")
+        
+        if query_mode == "Manual":
+            # Modo manual tradicional
+            query = st.text_area(
+                "Escreva sua consulta SQL (apenas SELECT)", 
+                value="SELECT * FROM ibama_infracao LIMIT 10", 
+                height=150
+            )
+            
+            if st.button("Executar Consulta"):
+                if query.strip().lower().startswith("select"):
+                    try:
+                        df = st.session_state.db.execute_query(query)
+                        st.dataframe(df)
+                    except Exception as e:
+                        st.error(f"Erro na consulta: {e}")
+                else:
+                    st.error("Apenas consultas SELECT são permitidas por segurança.")
+        
+        else:
+            # Modo IA
+            st.subheader("🤖 Geração Inteligente de SQL")
+            
+            # Input em linguagem natural
+            natural_query = st.text_area(
+                "Descreva o que você quer analisar:",
+                placeholder="Ex: Quais são os 10 estados com mais infrações em 2024?",
+                height=100
+            )
+            
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                if st.button("🔮 Gerar SQL", type="primary"):
+                    if natural_query.strip():
+                        try:
+                            with st.spinner(f"🤖 {llm_provider.title()} gerando SQL..."):
+                                # Gera SQL usando o LLM selecionado
+                                generated_sql = st.session_state.llm.generate_sql(
+                                    natural_query, 
+                                    llm_provider
+                                )
+                                
+                                # Exibe o SQL gerado
+                                st.subheader("SQL Gerado:")
+                                st.code(generated_sql, language="sql")
+                                
+                                # Armazena no session state para execução
+                                st.session_state.generated_sql = generated_sql
+                                
+                        except Exception as e:
+                            st.error(f"Erro ao gerar SQL: {e}")
+                    else:
+                        st.warning("Digite uma descrição da análise desejada.")
+            
+            with col2:
+                if st.button("▶️ Executar SQL Gerado") and hasattr(st.session_state, 'generated_sql'):
+                    try:
+                        with st.spinner("Executando consulta..."):
+                            df = st.session_state.db.execute_query(st.session_state.generated_sql)
+                            
+                            st.subheader("Resultados:")
+                            st.dataframe(df)
+                            
+                            # Análise automática dos resultados
+                            if not df.empty:
+                                st.subheader("📊 Análise Automática:")
+                                analysis_prompt = f"Analise estes resultados da consulta '{natural_query}': {df.head().to_string()}"
+                                
+                                try:
+                                    analysis = st.session_state.llm.generate_analysis(
+                                        analysis_prompt, 
+                                        llm_provider
+                                    )
+                                    st.write(analysis)
+                                except:
+                                    st.info("Análise automática não disponível.")
+                    
+                    except Exception as e:
+                        st.error(f"Erro na execução: {e}")
+            
+            # Exemplos de consultas
+            st.subheader("💡 Exemplos de Consultas:")
+            examples = [
+                "Top 5 estados com mais infrações",
+                "Valor total de multas por tipo de infração",
+                "Infrações por mês em 2024",
+                "Principais infratores por valor de multa",
+                "Distribuição de infrações por gravidade"
+            ]
+            
+            for example in examples:
+                if st.button(f"📝 {example}", key=f"example_{hash(example)}"):
+                    st.session_state.example_query = example
+                    st.rerun()
     
     with tab4:
         st.header("🔧 Diagnóstico do Sistema")
