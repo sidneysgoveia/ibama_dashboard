@@ -896,6 +896,9 @@ class Chatbot:
                             model_name = "Llama 3.1" if self.llm_config["provider"] == "groq" else "Gemini 1.5"
                             answer += f"\n\n*🤖 Resposta gerada por {model_name}*"
                         
+                        # Adiciona aviso obrigatório sobre IA
+                        answer += "\n\n⚠️ **Aviso Importante:** Todas as respostas precisam ser checadas. Os modelos de IA podem ter erros de alucinação, baixa qualidade em certos pontos, vieses ou problemas éticos."
+                        
                         st.markdown(answer)
                         
                         # Adiciona ao histórico
@@ -949,6 +952,9 @@ class Chatbot:
             answer += "\n\n*💡 Resposta baseada em análise dos dados*"
         elif response.get("source") == "knowledge_base":
             answer += "\n\n*📚 Resposta baseada em conhecimento especializado*"
+        
+        # Adiciona aviso obrigatório sobre IA
+        answer += "\n\n⚠️ **Aviso Importante:** Todas as respostas precisam ser checadas. Os modelos de IA podem ter erros de alucinação, baixa qualidade em certos pontos, vieses ou problemas éticos."
         
         st.session_state.messages.append({"role": "assistant", "content": answer})
         st.rerun()
