@@ -539,112 +539,110 @@ class DataVisualization:
             df_pessoas_fisicas = df_clean[df_clean['is_cpf']]
             df_empresas = df_clean[df_clean['is_cnpj']]
             
-            # Cria duas colunas para os gráficos
-            col1, col2 = st.columns(2)
-            
-            # Gráfico 1: Top 10 Pessoas Físicas (CPF)
-            with col1:
-                if not df_pessoas_fisicas.empty:
-                    # Agrupa por NOME_INFRATOR e CPF_CNPJ_INFRATOR, soma os valores
-                    pf_grouped = df_pessoas_fisicas.groupby(['NOME_INFRATOR', 'CPF_CNPJ_INFRATOR'])['VAL_AUTO_INFRACAO_NUMERIC'].sum().reset_index()
-                    pf_grouped = pf_grouped.nlargest(10, 'VAL_AUTO_INFRACAO_NUMERIC')
+            # Gráfico 1: Top 10 Pessoas Físicas (CPF) - PRIMEIRO
+            if not df_pessoas_fisicas.empty:
+                # Agrupa por NOME_INFRATOR e CPF_CNPJ_INFRATOR, soma os valores
+                pf_grouped = df_pessoas_fisicas.groupby(['NOME_INFRATOR', 'CPF_CNPJ_INFRATOR'])['VAL_AUTO_INFRACAO_NUMERIC'].sum().reset_index()
+                pf_grouped = pf_grouped.nlargest(10, 'VAL_AUTO_INFRACAO_NUMERIC')
+                
+                if not pf_grouped.empty:
+                    # Cria rótulo combinado (nome + CPF mascarado)
+                    pf_grouped['label'] = pf_grouped.apply(
+                        lambda x: f"{x['NOME_INFRATOR'][:40]}{'...' if len(x['NOME_INFRATOR']) > 40 else ''}\n(CPF: {x['CPF_CNPJ_INFRATOR'][:3]}.***.***-{x['CPF_CNPJ_INFRATOR'][-2:]})", 
+                        axis=1
+                    )
                     
-                    if not pf_grouped.empty:
-                        # Cria rótulo combinado (nome + CPF mascarado)
-                        pf_grouped['label'] = pf_grouped.apply(
-                            lambda x: f"{x['NOME_INFRATOR'][:30]}{'...' if len(x['NOME_INFRATOR']) > 30 else ''}\n(CPF: {x['CPF_CNPJ_INFRATOR'][:3]}.***.***-{x['CPF_CNPJ_INFRATOR'][-2:]})", 
-                            axis=1
-                        )
-                        
-                        fig_pf = px.bar(
-                            pf_grouped.sort_values('VAL_AUTO_INFRACAO_NUMERIC'), 
-                            y='label', 
-                            x='VAL_AUTO_INFRACAO_NUMERIC', 
-                            orientation='h',
-                            title="<b>Top 10 Pessoas Físicas por Valor de Multa</b>",
-                            labels={'label': 'Pessoa Física', 'VAL_AUTO_INFRACAO_NUMERIC': 'Valor Total (R$)'},
-                            text='VAL_AUTO_INFRACAO_NUMERIC'
-                        )
-                        
-                        # Formata os valores no eixo X como moeda
-                        fig_pf.update_layout(
-                            xaxis_tickformat=',.0f',
-                            height=500,
-                            margin=dict(l=200)  # Mais espaço à esquerda para os nomes
-                        )
-                        
-                        # Formata os textos dos valores
-                        fig_pf.update_traces(
-                            texttemplate='R$ %{x:,.0f}',
-                            textposition='outside'
-                        )
-                        
-                        st.plotly_chart(fig_pf, use_container_width=True)
-                        
-                        # Mostra estatísticas
-                        total_pf = pf_grouped['VAL_AUTO_INFRACAO_NUMERIC'].sum()
-                        st.caption(f"💰 Total: R$ {total_pf:,.2f} | 👥 {len(pf_grouped)} pessoas físicas")
-                    else:
-                        st.info("Nenhuma pessoa física encontrada nos dados filtrados.")
+                    fig_pf = px.bar(
+                        pf_grouped.sort_values('VAL_AUTO_INFRACAO_NUMERIC'), 
+                        y='label', 
+                        x='VAL_AUTO_INFRACAO_NUMERIC', 
+                        orientation='h',
+                        title="<b>Top 10 Pessoas Físicas por Valor de Multa</b>",
+                        labels={'label': 'Pessoa Física', 'VAL_AUTO_INFRACAO_NUMERIC': 'Valor Total (R$)'},
+                        text='VAL_AUTO_INFRACAO_NUMERIC'
+                    )
+                    
+                    # Formata os valores no eixo X como moeda
+                    fig_pf.update_layout(
+                        xaxis_tickformat=',.0f',
+                        height=600,
+                        margin=dict(l=250)  # Mais espaço à esquerda para os nomes
+                    )
+                    
+                    # Formata os textos dos valores
+                    fig_pf.update_traces(
+                        texttemplate='R$ %{x:,.0f}',
+                        textposition='outside'
+                    )
+                    
+                    st.plotly_chart(fig_pf, use_container_width=True)
+                    
+                    # Mostra estatísticas
+                    total_pf = pf_grouped['VAL_AUTO_INFRACAO_NUMERIC'].sum()
+                    st.caption(f"💰 Total: R$ {total_pf:,.2f} | 👥 {len(pf_grouped)} pessoas físicas")
                 else:
                     st.info("Nenhuma pessoa física encontrada nos dados filtrados.")
+            else:
+                st.info("Nenhuma pessoa física encontrada nos dados filtrados.")
             
-            # Gráfico 2: Top 10 Empresas (CNPJ)
-            with col2:
-                if not df_empresas.empty:
-                    # Agrupa por NOME_INFRATOR e CPF_CNPJ_INFRATOR, soma os valores
-                    empresa_grouped = df_empresas.groupby(['NOME_INFRATOR', 'CPF_CNPJ_INFRATOR'])['VAL_AUTO_INFRACAO_NUMERIC'].sum().reset_index()
-                    empresa_grouped = empresa_grouped.nlargest(10, 'VAL_AUTO_INFRACAO_NUMERIC')
+            # Separador visual
+            st.divider()
+            
+            # Gráfico 2: Top 10 Empresas (CNPJ) - SEGUNDO (abaixo)
+            if not df_empresas.empty:
+                # Agrupa por NOME_INFRATOR e CPF_CNPJ_INFRATOR, soma os valores
+                empresa_grouped = df_empresas.groupby(['NOME_INFRATOR', 'CPF_CNPJ_INFRATOR'])['VAL_AUTO_INFRACAO_NUMERIC'].sum().reset_index()
+                empresa_grouped = empresa_grouped.nlargest(10, 'VAL_AUTO_INFRACAO_NUMERIC')
+                
+                if not empresa_grouped.empty:
+                    # Cria rótulo combinado (nome + CNPJ COMPLETO)
+                    empresa_grouped['label'] = empresa_grouped.apply(
+                        lambda x: f"{x['NOME_INFRATOR'][:40]}{'...' if len(x['NOME_INFRATOR']) > 40 else ''}\n(CNPJ: {x['CPF_CNPJ_INFRATOR']})", 
+                        axis=1
+                    )
                     
-                    if not empresa_grouped.empty:
-                        # Cria rótulo combinado (nome + CNPJ mascarado)
-                        empresa_grouped['label'] = empresa_grouped.apply(
-                            lambda x: f"{x['NOME_INFRATOR'][:30]}{'...' if len(x['NOME_INFRATOR']) > 30 else ''}\n(CNPJ: {x['CPF_CNPJ_INFRATOR'][:2]}.***.***/****-{x['CPF_CNPJ_INFRATOR'][-2:]})", 
-                            axis=1
-                        )
-                        
-                        fig_empresa = px.bar(
-                            empresa_grouped.sort_values('VAL_AUTO_INFRACAO_NUMERIC'), 
-                            y='label', 
-                            x='VAL_AUTO_INFRACAO_NUMERIC', 
-                            orientation='h',
-                            title="<b>Top 10 Empresas por Valor de Multa</b>",
-                            labels={'label': 'Empresa', 'VAL_AUTO_INFRACAO_NUMERIC': 'Valor Total (R$)'},
-                            text='VAL_AUTO_INFRACAO_NUMERIC',
-                            color_discrete_sequence=['#ff6b6b']  # Cor diferente para empresas
-                        )
-                        
-                        # Formata os valores no eixo X como moeda
-                        fig_empresa.update_layout(
-                            xaxis_tickformat=',.0f',
-                            height=500,
-                            margin=dict(l=200)  # Mais espaço à esquerda para os nomes
-                        )
-                        
-                        # Formata os textos dos valores
-                        fig_empresa.update_traces(
-                            texttemplate='R$ %{x:,.0f}',
-                            textposition='outside'
-                        )
-                        
-                        st.plotly_chart(fig_empresa, use_container_width=True)
-                        
-                        # Mostra estatísticas
-                        total_empresa = empresa_grouped['VAL_AUTO_INFRACAO_NUMERIC'].sum()
-                        st.caption(f"💰 Total: R$ {total_empresa:,.2f} | 🏢 {len(empresa_grouped)} empresas")
-                    else:
-                        st.info("Nenhuma empresa encontrada nos dados filtrados.")
+                    fig_empresa = px.bar(
+                        empresa_grouped.sort_values('VAL_AUTO_INFRACAO_NUMERIC'), 
+                        y='label', 
+                        x='VAL_AUTO_INFRACAO_NUMERIC', 
+                        orientation='h',
+                        title="<b>Top 10 Empresas por Valor de Multa</b>",
+                        labels={'label': 'Empresa', 'VAL_AUTO_INFRACAO_NUMERIC': 'Valor Total (R$)'},
+                        text='VAL_AUTO_INFRACAO_NUMERIC',
+                        color_discrete_sequence=['#ff6b6b']  # Cor diferente para empresas
+                    )
+                    
+                    # Formata os valores no eixo X como moeda
+                    fig_empresa.update_layout(
+                        xaxis_tickformat=',.0f',
+                        height=600,
+                        margin=dict(l=250)  # Mais espaço à esquerda para os nomes
+                    )
+                    
+                    # Formata os textos dos valores
+                    fig_empresa.update_traces(
+                        texttemplate='R$ %{x:,.0f}',
+                        textposition='outside'
+                    )
+                    
+                    st.plotly_chart(fig_empresa, use_container_width=True)
+                    
+                    # Mostra estatísticas
+                    total_empresa = empresa_grouped['VAL_AUTO_INFRACAO_NUMERIC'].sum()
+                    st.caption(f"💰 Total: R$ {total_empresa:,.2f} | 🏢 {len(empresa_grouped)} empresas")
                 else:
                     st.info("Nenhuma empresa encontrada nos dados filtrados.")
+            else:
+                st.info("Nenhuma empresa encontrada nos dados filtrados.")
             
-            # Estatísticas gerais
+            # Estatísticas gerais no final
             total_identificados = len(df_pessoas_fisicas) + len(df_empresas)
             total_nao_identificados = len(df_clean) - total_identificados
             
             if total_nao_identificados > 0:
-                st.info(f"📊 **Resumo:** {len(df_pessoas_fisicas)} pessoas físicas, {len(df_empresas)} empresas, {total_nao_identificados} registros com formato de CPF/CNPJ não identificado")
+                st.info(f"📊 **Resumo Geral:** {len(df_pessoas_fisicas)} pessoas físicas, {len(df_empresas)} empresas, {total_nao_identificados} registros com formato de CPF/CNPJ não identificado")
             else:
-                st.info(f"📊 **Resumo:** {len(df_pessoas_fisicas)} pessoas físicas, {len(df_empresas)} empresas identificadas")
+                st.info(f"📊 **Resumo Geral:** {len(df_pessoas_fisicas)} pessoas físicas, {len(df_empresas)} empresas identificadas")
                 
         except Exception as e:
             st.error(f"Erro no gráfico de infratores: {e}")
