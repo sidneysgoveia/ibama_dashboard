@@ -151,32 +151,72 @@ class Chatbot:
     def _analyze_top_municipalities(self, df: pd.DataFrame, question: str) -> Dict[str, Any]:
         """Analisa os municípios com mais infrações."""
         try:
-            if 'MUNICIPIO' not in df.columns or 'UF' not in df.columns:
+            # Verifica colunas disponíveis
+            required_base_cols = ['UF']
+            if not all(col in df.columns for col in required_base_cols):
                 return {"answer": "❌ Colunas necessárias não encontradas.", "source": "error"}
             
-            # Remove valores vazios
-            df_clean = df[df['MUNICIPIO'].notna() & (df['MUNICIPIO'] != '')]
+            # Método preferido: usar código do município
+            if 'COD_MUNICIPIO' in df.columns and 'MUNICIPIO' in df.columns:
+                # Remove valores vazios
+                df_clean = df[
+                    df['COD_MUNICIPIO'].notna() & 
+                    df['MUNICIPIO'].notna() & 
+                    df['UF'].notna() &
+                    (df['COD_MUNICIPIO'] != '') & 
+                    (df['MUNICIPIO'] != '') & 
+                    (df['UF'] != '')
+                ].copy()
+                
+                if df_clean.empty:
+                    return {"answer": "❌ Nenhum dado válido de município encontrado.", "source": "error"}
+                
+                # Agrupa por código do município e pega dados representativos
+                muni_data = df_clean.groupby('COD_MUNICIPIO').agg({
+                    'MUNICIPIO': 'first',  # Pega o primeiro nome (mais comum)
+                    'UF': 'first',         # Pega a UF
+                    'COD_MUNICIPIO': 'count'  # Conta infrações
+                }).rename(columns={'COD_MUNICIPIO': 'count'})
+                
+                muni_data = muni_data.reset_index()
+                muni_data = muni_data.sort_values('count', ascending=False)
+                
+                method_info = "contagem por código IBGE (mais precisa)"
+                
+            elif 'MUNICIPIO' in df.columns:
+                # Fallback: usar nome do município
+                df_clean = df[
+                    df['MUNICIPIO'].notna() & 
+                    df['UF'].notna() &
+                    (df['MUNICIPIO'] != '') & 
+                    (df['UF'] != '')
+                ]
+                
+                if df_clean.empty:
+                    return {"answer": "❌ Nenhum dado válido de município encontrado.", "source": "error"}
+                
+                muni_data = df_clean.groupby(['MUNICIPIO', 'UF']).size().reset_index(name='count')
+                muni_data = muni_data.sort_values('count', ascending=False)
+                
+                method_info = "contagem por nome (pode haver inconsistências)"
+                
+            else:
+                return {"answer": "❌ Dados de município não disponíveis.", "source": "error"}
             
-            if df_clean.empty:
-                return
-            
-            # Top 10 municípios
-            muni_counts = df_clean.groupby(['MUNICIPIO', 'UF']).size().reset_index(name='count')
-            muni_counts = muni_counts.sort_values('count', ascending=False)
-            
-            # Top N
+            # Extrai número do top (padrão 5)
             import re
             numbers = re.findall(r'\d+', question)
             top_n = int(numbers[0]) if numbers else 5
-            top_n = min(top_n, 10)
+            top_n = min(top_n, 15)  # Máximo 15
             
-            top_munis = muni_counts.head(top_n)
+            top_munis = muni_data.head(top_n)
             
             answer = f"**🏙️ Top {top_n} Municípios com Mais Infrações:**\n\n"
             for i, row in enumerate(top_munis.itertuples(), 1):
                 answer += f"{i}. **{row.MUNICIPIO} ({row.UF})**: {row.count:,} infrações\n"
             
-            answer += f"\n📊 Total de municípios analisados: {muni_counts['MUNICIPIO'].nunique():,}"
+            answer += f"\n📊 Total de municípios únicos: {len(muni_data):,}"
+            answer += f"\n*Método: {method_info}*"
             
             return {"answer": answer, "source": "data_analysis"}
             
@@ -308,12 +348,25 @@ class Chatbot:
         try:
             total_records = len(df)
             total_states = df['UF'].nunique() if 'UF' in df.columns else 0
-            total_municipalities = df['MUNICIPIO'].nunique() if 'MUNICIPIO' in df.columns else 0
+            
+            # Usa código do município se disponível (mais preciso)
+            if 'COD_MUNICIPIO' in df.columns:
+                total_municipalities = df['COD_MUNICIPIO'].nunique()
+                municipality_method = "por código IBGE"
+            elif 'MUNICIPIO' in df.columns:
+                total_municipalities = df['MUNICIPIO'].nunique()
+                municipality_method = "por nome (pode haver duplicatas)"
+            else:
+                total_municipalities = 0
+                municipality_method = "não disponível"
             
             answer = "**📊 Resumo Geral dos Dados:**\n\n"
             answer += f"• **Total de infrações**: {total_records:,}\n"
             answer += f"• **Estados envolvidos**: {total_states}\n"
             answer += f"• **Municípios afetados**: {total_municipalities:,}\n"
+            
+            if municipality_method != "não disponível":
+                answer += f"  *(contagem {municipality_method})*\n"
             
             # Período dos dados
             if 'DAT_HORA_AUTO_INFRACAO' in df.columns:
