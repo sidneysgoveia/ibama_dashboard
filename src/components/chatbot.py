@@ -54,7 +54,7 @@ class Chatbot:
             }
         
         try:
-            # Respostas para perguntas específicas
+            # Respostas para perguntas específicas sobre dados
             if any(keyword in question_lower for keyword in ["estados", "uf", "5 estados", "top estados"]):
                 return self._analyze_top_states(df, question)
             
@@ -72,6 +72,16 @@ class Chatbot:
             
             elif any(keyword in question_lower for keyword in ["total", "quantos", "número"]):
                 return self._analyze_totals(df, question)
+            
+            # Respostas sobre conceitos específicos do IBAMA
+            elif any(keyword in question_lower for keyword in ["biopirataria", "org. gen.", "modificação genética", "organismo"]):
+                return self._explain_concepts(question)
+            
+            elif any(keyword in question_lower for keyword in ["gravidade", "multa leve", "multa grave"]):
+                return self._analyze_gravity(df, question)
+            
+            elif any(keyword in question_lower for keyword in ["fauna", "flora", "animal", "planta"]):
+                return self._analyze_fauna_flora(df, question)
             
             else:
                 # Resposta genérica
@@ -254,7 +264,156 @@ class Chatbot:
         except Exception as e:
             return {"answer": f"❌ Erro ao calcular totais: {e}", "source": "error"}
     
-    def _analyze_general(self, df: pd.DataFrame, question: str) -> Dict[str, Any]:
+    def _explain_concepts(self, question: str) -> Dict[str, Any]:
+        """Explica conceitos relacionados às infrações ambientais."""
+        question_lower = question.lower()
+        
+        if any(keyword in question_lower for keyword in ["org. gen.", "modificação genética", "organismo geneticamente modificado"]):
+            answer = """**🧬 Organismos Geneticamente Modificados (OGM):**
+
+**Definição:** Organismos cujo material genético foi alterado através de técnicas de engenharia genética.
+
+**No contexto do IBAMA:**
+• Controle da introdução de OGMs no meio ambiente
+• Licenciamento para pesquisa e cultivo
+• Monitoramento de impactos ambientais
+• Fiscalização do transporte e armazenamento
+
+**Principais infrações:**
+• Cultivo sem autorização
+• Transporte irregular
+• Falta de isolamento adequado
+• Não cumprimento de medidas de biossegurança"""
+
+        elif "biopirataria" in question_lower:
+            answer = """**🏴‍☠️ Biopirataria:**
+
+**Definição:** Apropriação ilegal de recursos biológicos e conhecimentos tradicionais sem autorização ou compensação.
+
+**Principais modalidades:**
+• **Coleta ilegal** de espécimes da fauna e flora
+• **Extração não autorizada** de material genético
+• **Uso comercial** sem licença de recursos naturais
+• **Apropriação** de conhecimentos de comunidades tradicionais
+
+**No contexto do IBAMA:**
+• Fiscalização da coleta científica
+• Controle de acesso ao patrimônio genético
+• Licenciamento para pesquisa biológica
+• Proteção de conhecimentos tradicionais
+
+**Penalidades:**
+• Multas de R$ 200 a R$ 2 milhões
+• Apreensão do material coletado
+• Processo criminal
+• Reparação de danos ambientais"""
+
+        else:
+            # Resposta genérica sobre conceitos
+            answer = """**📚 Conceitos Ambientais no IBAMA:**
+
+**Principais áreas de atuação:**
+• **Biopirataria:** Apropriação ilegal de recursos biológicos
+• **OGMs:** Controle de organismos geneticamente modificados  
+• **Fauna:** Proteção de animais silvestres
+• **Flora:** Conservação da vegetação nativa
+• **Recursos hídricos:** Gestão de águas
+• **Unidades de conservação:** Proteção de áreas especiais
+
+**Tipos de infração:**
+• Leves, graves e gravíssimas
+• Multas de R$ 50 a R$ 50 milhões
+• Medidas administrativas
+• Responsabilização criminal"""
+
+        return {"answer": answer, "source": "knowledge_base"}
+    
+    def _analyze_gravity(self, df: pd.DataFrame, question: str) -> Dict[str, Any]:
+        """Analisa distribuição por gravidade das infrações."""
+        try:
+            if 'GRAVIDADE_INFRACAO' not in df.columns:
+                return {"answer": "❌ Coluna de gravidade não encontrada nos dados.", "source": "error"}
+            
+            df_clean = df[df['GRAVIDADE_INFRACAO'].notna() & (df['GRAVIDADE_INFRACAO'] != '')]
+            gravity_counts = df_clean['GRAVIDADE_INFRACAO'].value_counts()
+            
+            answer = "**⚖️ Distribuição por Gravidade das Infrações:**\n\n"
+            
+            for gravity, count in gravity_counts.items():
+                percentage = (count / len(df_clean)) * 100
+                
+                # Emoji por gravidade
+                if "leve" in gravity.lower():
+                    emoji = "🟢"
+                elif "grave" in gravity.lower() and "gravíssima" not in gravity.lower():
+                    emoji = "🟡"
+                elif "gravíssima" in gravity.lower():
+                    emoji = "🔴"
+                else:
+                    emoji = "⚫"
+                
+                answer += f"{emoji} **{gravity.title()}**: {count:,} infrações ({percentage:.1f}%)\n"
+            
+            answer += f"\n📊 Total analisado: {len(df_clean):,} infrações com gravidade definida"
+            
+            # Explicação das gravidades
+            answer += "\n\n**ℹ️ Classificação:**\n"
+            answer += "🟢 **Leves:** Multa de R$ 50 a R$ 10.000\n"
+            answer += "🟡 **Graves:** Multa de R$ 10.001 a R$ 1.000.000\n"
+            answer += "🔴 **Gravíssimas:** Multa de R$ 1.000.001 a R$ 50.000.000"
+            
+            return {"answer": answer, "source": "data_analysis"}
+            
+        except Exception as e:
+            return {"answer": f"❌ Erro ao analisar gravidade: {e}", "source": "error"}
+    
+    def _analyze_fauna_flora(self, df: pd.DataFrame, question: str) -> Dict[str, Any]:
+        """Analisa infrações relacionadas à fauna e flora."""
+        try:
+            if 'TIPO_INFRACAO' not in df.columns:
+                return {"answer": "❌ Coluna de tipos de infração não encontrada.", "source": "error"}
+            
+            df_clean = df[df['TIPO_INFRACAO'].notna() & (df['TIPO_INFRACAO'] != '')]
+            
+            # Busca por termos relacionados à fauna e flora
+            fauna_terms = ['fauna', 'animal', 'caça', 'pesca', 'peixe', 'ave', 'mamífero']
+            flora_terms = ['flora', 'planta', 'árvore', 'madeira', 'vegetal', 'floresta']
+            
+            fauna_mask = df_clean['TIPO_INFRACAO'].str.contains(
+                '|'.join(fauna_terms), case=False, na=False
+            )
+            flora_mask = df_clean['TIPO_INFRACAO'].str.contains(
+                '|'.join(flora_terms), case=False, na=False
+            )
+            
+            fauna_count = fauna_mask.sum()
+            flora_count = flora_mask.sum()
+            
+            answer = "**🌿 Análise de Infrações Fauna e Flora:**\n\n"
+            
+            if fauna_count > 0:
+                answer += f"🐾 **Infrações contra Fauna**: {fauna_count:,} casos\n"
+                fauna_types = df_clean[fauna_mask]['TIPO_INFRACAO'].value_counts().head(5)
+                for tipo, count in fauna_types.items():
+                    answer += f"   • {tipo.title()}: {count:,}\n"
+                answer += "\n"
+            
+            if flora_count > 0:
+                answer += f"🌳 **Infrações contra Flora**: {flora_count:,} casos\n"
+                flora_types = df_clean[flora_mask]['TIPO_INFRACAO'].value_counts().head(5)
+                for tipo, count in flora_types.items():
+                    answer += f"   • {tipo.title()}: {count:,}\n"
+                answer += "\n"
+            
+            other_count = len(df_clean) - fauna_count - flora_count
+            answer += f"⚖️ **Outras infrações**: {other_count:,} casos\n"
+            
+            answer += f"\n📊 Total analisado: {len(df_clean):,} infrações"
+            
+            return {"answer": answer, "source": "data_analysis"}
+            
+        except Exception as e:
+            return {"answer": f"❌ Erro ao analisar fauna/flora: {e}", "source": "error"}
         """Análise genérica dos dados."""
         return {
             "answer": f"📊 Tenho {len(df):,} registros de infrações do IBAMA disponíveis para análise.\n\n" +
@@ -271,28 +430,55 @@ class Chatbot:
     def query(self, question: str, provider: str = 'direct') -> Dict[str, Any]:
         """Processa uma pergunta do usuário."""
         
-        # Para perguntas sobre dados, usa análise direta (mais rápido)
         question_lower = question.lower()
+        
+        # Palavras-chave que indicam perguntas sobre dados ou conceitos (não web)
         data_keywords = [
             "estados", "uf", "municípios", "cidades", "valor", "multa", 
-            "tipo", "infração", "ano", "total", "quantos", "top", "maior", "menor"
+            "tipo", "infração", "ano", "total", "quantos", "top", "maior", "menor",
+            "biopirataria", "org. gen.", "modificação genética", "organismo",
+            "gravidade", "leve", "grave", "gravíssima", "fauna", "flora", 
+            "animal", "planta", "ibama", "ambiental"
         ]
         
+        # Palavras que realmente precisam de busca web
+        web_keywords = [
+            "endereço", "telefone", "contato", "site oficial", "história do ibama",
+            "quem é o presidente", "localização da sede", "como chegar"
+        ]
+        
+        # Se tem palavras web específicas, tenta LLM/web
+        if any(keyword in question_lower for keyword in web_keywords):
+            if self.llm_integration:
+                try:
+                    return self.llm_integration.query(question, provider)
+                except Exception as e:
+                    return {
+                        "answer": f"❌ Busca na internet não disponível: {str(e)}",
+                        "source": "error"
+                    }
+        
+        # Para perguntas sobre dados ou conceitos, usa análise local
         if any(keyword in question_lower for keyword in data_keywords):
             return self._answer_with_data_analysis(question)
         
-        # Para outras perguntas, usa LLM (se disponível)
-        if self.llm_integration:
-            try:
-                return self.llm_integration.query(question, provider)
-            except Exception as e:
-                return {
-                    "answer": f"❌ Erro no processamento: {str(e)}\n\nTentarei responder com análise direta dos dados...",
-                    "source": "error"
-                }
+        # Para perguntas genéricas sobre o sistema, responde diretamente
+        if any(keyword in question_lower for keyword in ["o que", "como", "explicar", "definir"]):
+            return self._answer_with_data_analysis(question)
         
-        # Fallback
-        return self._analyze_general(self._get_cached_data(), question)
+        # Default: tenta análise local primeiro
+        try:
+            return self._answer_with_data_analysis(question)
+        except Exception as e:
+            return {
+                "answer": "❌ Não consegui processar sua pergunta. Tente perguntas sobre:\n\n" +
+                         "• Estados com mais infrações\n" +
+                         "• Valores de multas\n" +
+                         "• Tipos de infrações\n" +
+                         "• Conceitos como biopirataria\n" +
+                         "• Distribuição por gravidade",
+                "source": "error"
+            }
     
     def display_chat_interface(self):
         """Exibe a interface do chatbot."""
@@ -338,25 +524,47 @@ class Chatbot:
     def display_sample_questions(self):
         """Exibe perguntas de exemplo."""
         with st.expander("💡 Perguntas de Exemplo"):
-            sample_questions = [
+            
+            # Categorias de perguntas
+            st.write("**📊 Análise de Dados:**")
+            data_questions = [
                 "Quais são os 5 estados com mais infrações?",
                 "Quais os principais municípios afetados?", 
                 "Qual o valor total das multas?",
                 "Quais os tipos de infrações mais comuns?",
-                "Como está a distribuição por ano?",
-                "Quantas infrações temos no total?"
+                "Como está a distribuição por gravidade?"
             ]
             
-            for question in sample_questions:
-                if st.button(question, key=f"sample_{hash(question)}"):
-                    # Simula input do usuário
-                    st.session_state.messages.append({"role": "user", "content": question})
-                    
-                    # Processa resposta
-                    response = self.query(question)
-                    answer = response.get("answer", "❌ Erro ao processar pergunta.")
-                    if response.get("source") == "data_analysis":
-                        answer += "\n\n*💡 Resposta baseada em análise direta dos dados*"
-                    
-                    st.session_state.messages.append({"role": "assistant", "content": answer})
-                    st.rerun()
+            for question in data_questions:
+                if st.button(question, key=f"data_{hash(question)}"):
+                    self._handle_sample_question(question)
+            
+            st.write("**🧬 Conceitos Ambientais:**")
+            concept_questions = [
+                "O que é biopirataria?",
+                "O que é Org. Gen. Modific.?",
+                "Como funcionam as multas por gravidade?",
+                "Quais infrações afetam fauna e flora?"
+            ]
+            
+            for question in concept_questions:
+                if st.button(question, key=f"concept_{hash(question)}"):
+                    self._handle_sample_question(question)
+    
+    def _handle_sample_question(self, question: str):
+        """Manipula clique em pergunta de exemplo."""
+        # Adiciona pergunta do usuário
+        st.session_state.messages.append({"role": "user", "content": question})
+        
+        # Processa resposta
+        response = self.query(question)
+        answer = response.get("answer", "❌ Erro ao processar pergunta.")
+        
+        # Adiciona indicador de fonte
+        if response.get("source") == "data_analysis":
+            answer += "\n\n*💡 Resposta baseada em análise dos dados*"
+        elif response.get("source") == "knowledge_base":
+            answer += "\n\n*📚 Resposta baseada em conhecimento especializado*"
+        
+        st.session_state.messages.append({"role": "assistant", "content": answer})
+        st.rerun()
