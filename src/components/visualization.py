@@ -397,7 +397,7 @@ class DataVisualization:
             st.error(f"Erro no gráfico de tipos: {e}")
 
     def create_gravity_distribution_chart_advanced(self, selected_ufs: list, date_filters: dict):
-        """Cria gráfico de distribuição por gravidade com filtros avançados."""
+        """Cria gráfico de distribuição por gravidade com contagem correta."""
         try:
             df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
@@ -410,13 +410,19 @@ class DataVisualization:
             if df_clean.empty:
                 return
             
-            gravity_counts = df_clean['GRAVIDADE_INFRACAO'].value_counts()
+            # Conta infrações únicas por gravidade se NUM_AUTO_INFRACAO disponível
+            if 'NUM_AUTO_INFRACAO' in df_clean.columns:
+                gravity_counts = df_clean.groupby('GRAVIDADE_INFRACAO')['NUM_AUTO_INFRACAO'].nunique()
+                method_note = "infrações únicas"
+            else:
+                gravity_counts = df_clean['GRAVIDADE_INFRACAO'].value_counts()
+                method_note = "registros"
             
             if not gravity_counts.empty:
                 fig = px.pie(
                     values=gravity_counts.values,
                     names=gravity_counts.index,
-                    title="<b>Distribuição por Gravidade da Infração</b>", 
+                    title=f"<b>Distribuição por Gravidade da Infração ({method_note})</b>", 
                     hole=0.4
                 )
                 st.plotly_chart(fig, use_container_width=True)
@@ -522,7 +528,7 @@ class DataVisualization:
             st.error(f"Erro no mapa: {e}")
 
     def create_infraction_status_chart_advanced(self, selected_ufs: list, date_filters: dict):
-        """Cria gráfico do status das infrações com filtros avançados."""
+        """Cria gráfico do status das infrações com contagem correta."""
         try:
             df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
@@ -535,7 +541,13 @@ class DataVisualization:
             if df_clean.empty:
                 return
             
-            status_counts = df_clean['DES_STATUS_FORMULARIO'].value_counts().head(10)
+            # Conta infrações únicas por status se NUM_AUTO_INFRACAO disponível
+            if 'NUM_AUTO_INFRACAO' in df_clean.columns:
+                status_counts = df_clean.groupby('DES_STATUS_FORMULARIO')['NUM_AUTO_INFRACAO'].nunique().sort_values(ascending=False).head(10)
+                method_note = "infrações únicas"
+            else:
+                status_counts = df_clean['DES_STATUS_FORMULARIO'].value_counts().head(10)
+                method_note = "registros"
             
             if not status_counts.empty:
                 chart_df = pd.DataFrame({
@@ -550,7 +562,7 @@ class DataVisualization:
                     y='DES_STATUS_FORMULARIO', 
                     x='total', 
                     orientation='h',
-                    title="<b>Estágio Atual das Infrações (Top 10)</b>", 
+                    title=f"<b>Estágio Atual das Infrações (Top 10 - {method_note})</b>", 
                     text='total'
                 )
                 st.plotly_chart(fig, use_container_width=True)
