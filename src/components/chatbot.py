@@ -830,6 +830,23 @@ class Chatbot:
         if any(keyword in question_lower for keyword in data_keywords):
             return self._answer_with_data_analysis(question)
         
+    def _add_ai_warning(self, answer: str, source: str) -> str:
+        """Adiciona aviso sobre IA a todas as respostas."""
+        # Sempre adiciona o aviso, independente da fonte
+        warning = "\n\n⚠️ **Aviso Importante:** Todas as respostas precisam ser checadas. Os modelos de IA podem ter erros de alucinação, baixa qualidade em certos pontos, vieses ou problemas éticos."
+        
+        # Adiciona informação sobre a fonte
+        if source == "data_analysis":
+            source_info = "\n\n*💡 Resposta baseada em análise direta dos dados*"
+        elif source == "knowledge_base":
+            source_info = "\n\n*📚 Resposta baseada em conhecimento especializado*"
+        elif source == "llm":
+            model_name = "Llama 3.1" if self.llm_config["provider"] == "groq" else "Gemini 1.5"
+            source_info = f"\n\n*🤖 Resposta gerada por {model_name}*"
+        else:
+            source_info = ""
+        
+        return answer + source_info + warning
         # Para perguntas genéricas sobre o sistema, responde diretamente
         if any(keyword in question_lower for keyword in ["o que", "como", "explicar", "definir"]):
             return self._answer_with_data_analysis(question)
@@ -888,21 +905,15 @@ class Chatbot:
                     try:
                         response = self.query(prompt)
                         answer = response.get("answer", "❌ Não foi possível processar sua pergunta.")
+                        source = response.get("source", "unknown")
                         
-                        # Adiciona informação sobre a fonte
-                        if response.get("source") == "data_analysis":
-                            answer += "\n\n*💡 Resposta baseada em análise direta dos dados*"
-                        elif response.get("source") == "llm":
-                            model_name = "Llama 3.1" if self.llm_config["provider"] == "groq" else "Gemini 1.5"
-                            answer += f"\n\n*🤖 Resposta gerada por {model_name}*"
+                        # Adiciona aviso obrigatório sobre IA a TODAS as respostas
+                        final_answer = self._add_ai_warning(answer, source)
                         
-                        # Adiciona aviso obrigatório sobre IA
-                        answer += "\n\n⚠️ **Aviso Importante:** Todas as respostas precisam ser checadas. Os modelos de IA podem ter erros de alucinação, baixa qualidade em certos pontos, vieses ou problemas éticos."
-                        
-                        st.markdown(answer)
+                        st.markdown(final_answer)
                         
                         # Adiciona ao histórico
-                        st.session_state.messages.append({"role": "assistant", "content": answer})
+                        st.session_state.messages.append({"role": "assistant", "content": final_answer})
                         
                     except Exception as e:
                         error_msg = f"❌ Erro ao processar pergunta: {str(e)}"
@@ -946,15 +957,10 @@ class Chatbot:
         # Processa resposta
         response = self.query(question)
         answer = response.get("answer", "❌ Erro ao processar pergunta.")
+        source = response.get("source", "unknown")
         
-        # Adiciona indicador de fonte
-        if response.get("source") == "data_analysis":
-            answer += "\n\n*💡 Resposta baseada em análise dos dados*"
-        elif response.get("source") == "knowledge_base":
-            answer += "\n\n*📚 Resposta baseada em conhecimento especializado*"
+        # Adiciona aviso obrigatório sobre IA a TODAS as respostas
+        final_answer = self._add_ai_warning(answer, source)
         
-        # Adiciona aviso obrigatório sobre IA
-        answer += "\n\n⚠️ **Aviso Importante:** Todas as respostas precisam ser checadas. Os modelos de IA podem ter erros de alucinação, baixa qualidade em certos pontos, vieses ou problemas éticos."
-        
-        st.session_state.messages.append({"role": "assistant", "content": answer})
+        st.session_state.messages.append({"role": "assistant", "content": final_answer})
         st.rerun()
