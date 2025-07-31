@@ -245,19 +245,6 @@ SUPABASE_KEY=sua_chave_supabase
 - ✅ Explorador SQL operacional
 - ✅ Filtros avançados implementados
 
-### **🎯 Próximas Versões**
-- **v1.0** (Estável):
-  - 📈 Análises preditivas com Machine Learning
-  - 📋 Sistema de relatórios automatizados
-  - 🔄 API REST para integração externa
-  - 📱 Responsividade mobile aprimorada
-
-- **v1.1** (Expansão):
-  - 🌍 Integração com dados de outros órgãos ambientais
-  - 📊 Dashboard para gestores públicos
-  - 🔔 Sistema de alertas personalizados
-  - 📈 Análise de tendências avançada
-
 ## ⚖️ Aspectos Legais e Éticos
 
 ### **Uso Responsável**
