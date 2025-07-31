@@ -37,6 +37,7 @@ Este aplicativo processa e analisa dados públicos de autos de infração do IBA
 - **Dois modelos disponíveis**:
   - 🦙 **Llama 3.1 70B (Groq)**: Rápido, ideal para consultas simples
   - 💎 **Gemini 1.5 Pro (Google)**: Avançado, para análises complexas
+  - (aqui usamos versão menos atual por limitações econômicas, mas você pode alterar o modelo com sua API key)
 - **Análise inteligente**: Combina dados locais com processamento de IA
 - **Transparência**: Avisos claros sobre limitações da IA
 
