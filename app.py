@@ -409,6 +409,8 @@ def main():
                 **Fonte:** [Portal de Dados Abertos do IBAMA](https://dadosabertos.ibama.gov.br/dataset/fiscalizacao-auto-de-infracao)
                 
                 **Desenvolvido por:** Reinaldo Chaves - [GitHub](https://github.com/reichaves/ibama_dashboard)
+
+                **reichaves@gmail.com
             """)
 
     # Abas principais
