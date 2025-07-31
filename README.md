@@ -1,168 +1,304 @@
-# IBAMA - Análise de Autos de Infração
+# 🌳 IBAMA Dashboard - Análise de Infrações Ambientais
 
-Aplicativo Streamlit para análise de dados de autos de infração do Instituto Brasileiro do Meio Ambiente e dos Recursos Naturais Renováveis (IBAMA).
+> **Status:** 🚧 **Versão Beta** - Em desenvolvimento ativo
 
-![IBAMA Logo](https://www.gov.br/ibama/pt-br/centrais-de-conteudo/imagens/logos/ibama-logo.png)
+Dashboard interativo para análise de dados de autos de infração do Instituto Brasileiro do Meio Ambiente e dos Recursos Naturais Renováveis (IBAMA), com recursos de Inteligência Artificial para consultas em linguagem natural.
 
-## Sobre
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://ibamadashboard.streamlit.app/)
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/reichaves/ibama_dashboard)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://python.org)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-Este aplicativo baixa, processa e analisa dados de autos de infração do IBAMA, disponibilizados pelo [Portal de Dados Abertos](https://dadosabertos.ibama.gov.br/dataset/fiscalizacao-auto-de-infracao). O sistema oferece:
+## 📊 Sobre o Projeto
 
-- Download automático dos dados a partir de arquivos CSV compactados
-- Armazenamento em banco de dados local (DuckDB) e online (Supabase)
-- Dashboard com visualizações interativas dos dados
-- Chatbot inteligente para consultas em linguagem natural usando Llama 3.1
-- Análise especializada de infrações relacionadas à biopirataria
-- Geração robusta de SQL com LLMs e análise inteligente de resultados
-- Agentes inteligentes para análises avançadas de dados
-- Programação de atualizações diárias (10h, horário de Brasília)
+Este aplicativo processa e analisa dados públicos de autos de infração do IBAMA, oferecendo uma interface moderna e intuitiva para exploração de dados ambientais brasileiros. Desenvolvido especificamente para **jornalistas**, **pesquisadores**, **acadêmicos** e **cidadãos interessados** em transparência ambiental.
 
-## Requisitos
+### 🎯 Objetivos
+- **Democratizar o acesso** aos dados ambientais brasileiros
+- **Facilitar análises jornalísticas** de infrações ambientais
+- **Apoiar pesquisas acadêmicas** com ferramentas modernas
+- **Promover transparência** em fiscalizações ambientais
+- **Combinar análise tradicional** com Inteligência Artificial
 
-- Python 3.8+
-- Conta na [Groq](https://groq.com/) para acesso aos modelos Llama 3.1
-- Conta no [HuggingFace](https://huggingface.co/) para acesso aos modelos de embeddings
-- Conta no [Supabase](https://supabase.com/) (opcional)
+## ✨ Funcionalidades Principais
 
-## Instalação
+### 📈 **Dashboard Interativo**
+- **Métricas em tempo real**: Total de infrações, valores de multas, municípios afetados
+- **Visualizações geográficas**: Mapas de calor das infrações por região
+- **Análises temporais**: Filtros avançados por ano e mês
+- **Rankings especializados**: 
+  - Top 10 pessoas físicas infratoras (CPF mascarado)
+  - Top 10 empresas infratoras (CNPJ completo)
+  - Estados e municípios com mais infrações
+- **Distribuição por gravidade**: Baixa, Média, e infrações sem avaliação
 
-1. Clone o repositório:
+### 🤖 **Chatbot com IA**
+- **Perguntas em linguagem natural**: "Quais estados têm mais infrações de pesca?"
+- **Dois modelos disponíveis**:
+  - 🦙 **Llama 3.1 70B (Groq)**: Rápido, ideal para consultas simples
+  - 💎 **Gemini 1.5 Pro (Google)**: Avançado, para análises complexas
+- **Análise inteligente**: Combina dados locais com processamento de IA
+- **Transparência**: Avisos claros sobre limitações da IA
+
+### 🔍 **Explorador SQL**
+- **Modo Manual**: Interface para consultas SQL diretas
+- **Modo IA**: Geração automática de SQL a partir de linguagem natural
+- **Análise automática**: Interpretação inteligente dos resultados
+- **Exemplos prontos**: Consultas pré-definidas para início rápido
+
+## 📰 Usos Jornalísticos
+
+### **Para Jornalismo Investigativo:**
+- **Identificação de padrões**: Empresas ou pessoas com histórico de infrações
+- **Análises regionais**: Comparação entre estados e regiões
+- **Séries temporais**: Evolução das infrações ao longo do tempo
+- **Cruzamento de dados**: Correlação entre tipos de infração e localização
+
+### **Para Reportagens:**
+- **Dados verificáveis**: Todas as informações têm origem oficial (IBAMA)
+- **Visualizações prontas**: Gráficos exportáveis para matérias
+- **Consultas específicas**: Busca por casos particulares ou regiões
+- **Contexto histórico**: Comparação com períodos anteriores
+
+### **Exemplos de Pautas:**
+- "As 10 empresas que mais receberam multas ambientais em 2024"
+- "Municípios amazônicos lideram ranking de infrações contra fauna"
+- "Crescimento de 30% nas multas por biopirataria no último ano"
+- "Perfil das infrações ambientais no seu estado"
+
+## 🔬 Aplicações em Pesquisa
+
+### **Pesquisa Acadêmica:**
+- **Análise quantitativa**: Dados estruturados para estudos estatísticos
+- **Séries históricas**: Dados desde 2024 para análises temporais
+- **Geolocalização**: Coordenadas para estudos espaciais
+- **Categorização**: Tipos de infração para estudos temáticos
+
+### **Áreas de Pesquisa Suportadas:**
+- **Direito Ambiental**: Efetividade da fiscalização
+- **Geografia**: Distribuição espacial de crimes ambientais
+- **Economia**: Impacto econômico das multas ambientais
+- **Ciências Sociais**: Perfil dos infratores ambientais
+- **Políticas Públicas**: Avaliação de programas de fiscalização
+
+### **Metodologia de Dados:**
+- **Fonte primária**: Portal de Dados Abertos do IBAMA
+- **Atualização**: Dados atualizados diariamente
+- **Qualidade**: Validação automática e limpeza de dados
+- **Transparência**: Código-fonte aberto para auditoria
+
+## 🚨 Limitações e Avisos Importantes
+
+### **⚠️ Limitações da IA**
+- **Alucinações**: Modelos podem gerar informações incorretas
+- **Vieses**: Podem refletir preconceitos dos dados de treinamento
+- **Contexto limitado**: Não compreendem nuances políticas ou sociais
+- **Verificação obrigatória**: **SEMPRE** confirme informações com fontes primárias
+
+### **📊 Limitações dos Dados**
+- **Período**: Dados disponíveis principalmente de 2024-2025
+- **Completude**: Nem todas as infrações podem estar classificadas
+- **Processamento**: Dados passam por limpeza automática que pode introduzir erros
+- **Interpretação**: Correlação não implica causalidade
+
+### **🔒 Privacidade e Ética**
+- **CPF mascarado**: Pessoas físicas têm dados protegidos (XXX.***.***-XX)
+- **CNPJ completo**: Empresas têm transparência total (dados públicos)
+- **Responsabilidade**: Usuário responsável pelo uso ético das informações
+
+## 🛠️ Tecnologias Utilizadas
+
+### **Frontend e Interface**
+- **[Streamlit](https://streamlit.io/)**: Framework web para aplicações de dados
+- **[Plotly](https://plotly.com/)**: Visualizações interativas
+- **[Pandas](https://pandas.pydata.org/)**: Manipulação e análise de dados
+
+### **Inteligência Artificial**
+- **[Groq](https://groq.com/)**: API para Llama 3.1 70B (processamento rápido)
+- **[Google Gemini](https://ai.google.dev/)**: Modelo avançado para análises complexas
+- **[OpenAI API](https://openai.com/)**: Interface compatível para LLMs
+
+### **Banco de Dados**
+- **[Supabase](https://supabase.com/)**: PostgreSQL na nuvem (produção)
+- **[DuckDB](https://duckdb.org/)**: Banco analítico local (desenvolvimento)
+
+### **Processamento de Dados**
+- **[NumPy](https://numpy.org/)**: Computação numérica
+- **[APScheduler](https://apscheduler.readthedocs.io/)**: Agendamento de tarefas
+- **[Requests](https://requests.readthedocs.io/)**: Download de dados
+
+### **Deploy e Infraestrutura**
+- **[Streamlit Community Cloud](https://streamlit.io/cloud)**: Hospedagem gratuita
+- **[GitHub](https://github.com/)**: Controle de versão e CI/CD
+- **[Python 3.8+](https://python.org)**: Linguagem base
+
+## 🚀 Como Usar
+
+### **💻 Acesso Online (Recomendado)**
+1. Acesse: **[ibamadashboard.streamlit.app](https://ibamadashboard.streamlit.app/)**
+2. Use os filtros na barra lateral para explorar os dados
+3. Navegue pelas 3 abas principais:
+   - **📊 Dashboard**: Visualizações interativas
+   - **💬 Chatbot**: Perguntas em linguagem natural
+   - **🔍 SQL**: Consultas personalizadas
+
+### **🏠 Instalação Local**
+
+#### **Pré-requisitos:**
+- Python 3.8 ou superior
+- Git
+- Chaves de API (opcional, para IA):
+  - [Groq API Key](https://console.groq.com/) (gratuita)
+  - [Google AI API Key](https://ai.google.dev/) (gratuita)
+
+#### **Passos:**
 ```bash
-git clone https://github.com/seu-usuario/ibama-analise.git
-cd ibama-analise
-```
+# 1. Clone o repositório
+git clone https://github.com/reichaves/ibama_dashboard.git
+cd ibama_dashboard
 
-2. Instale as dependências:
-```bash
+# 2. Instale dependências
 pip install -r requirements.txt
-```
 
-3. Configure as variáveis de ambiente:
-```bash
-# Copie o arquivo de exemplo
-cp env.example .env
+# 3. Configure variáveis de ambiente (opcional)
+cp .env.example .env
+# Edite .env com suas chaves de API
 
-# Edite o arquivo .env com suas chaves de API
-nano .env
-```
-
-## Configuração
-
-Edite o arquivo `.env` com suas credenciais:
-
-```ini
-# Groq API Key para Llama 3.1
-GROQ_API_KEY=your_groq_api_key_here
-
-# HuggingFace API Key para modelo de embeddings
-HUGGINGFACE_API_KEY=your_huggingface_api_key_here
-
-# Credenciais do Supabase (opcional)
-SUPABASE_URL=your_supabase_url_here
-SUPABASE_KEY=your_supabase_anon_key_here
-
-# URLs dos dados
-IBAMA_DATASET_URL=https://dadosabertos.ibama.gov.br/dataset/fiscalizacao-auto-de-infracao/resource/b2aba344-95df-43c0-b2ba-f4353cfd9a00
-IBAMA_ZIP_URL=https://dadosabertos.ibama.gov.br/dados/SIFISC/auto_infracao/auto_infracao/auto_infracao_csv.zip
-
-# Configuração do banco de dados
-DB_PATH=data/ibama_infracao.db
-```
-
-## Uso
-
-Execute o aplicativo Streamlit:
-
-```bash
+# 4. Execute o aplicativo
 streamlit run app.py
 ```
 
-Acesse o aplicativo em seu navegador em `http://localhost:8501`.
+#### **Variáveis de Ambiente (Opcionais):**
+```bash
+# Para funcionalidades de IA
+GROQ_API_KEY=sua_chave_groq_aqui
+GOOGLE_API_KEY=sua_chave_google_aqui
 
-## Funcionalidades
+# Para banco de dados (se não configurado, usa dados locais)
+SUPABASE_URL=sua_url_supabase
+SUPABASE_KEY=sua_chave_supabase
+```
 
-### Dashboard
-Visualize métricas e gráficos sobre os autos de infração, incluindo:
-- Total de autos e valores de multas
-- Distribuição geográfica das infrações
-- Evolução temporal das autuações
-- Tipos mais comuns de infrações
+## 📖 Guia Rápido de Uso
 
-### Análise de Biopirataria
-Seção especializada para análise de infrações relacionadas à biopirataria e tráfico de espécies:
-- Visualizações específicas por estado e tipo de infração
-- Tendências temporais de crimes contra a fauna e flora
-- Consultas especializadas para identificar padrões
-- Exportação de dados para análise posterior
+### **Para Jornalistas:**
+1. **Comece pelo Dashboard** para ter visão geral
+2. **Use o Chatbot** para perguntas específicas: "Maiores infratores no Pará"
+3. **Exporte visualizações** clicando no ícone da câmera nos gráficos
+4. **Sempre verifique** dados importantes com fontes primárias
 
-### Chatbot
-Faça perguntas em linguagem natural sobre os dados, como:
-- "Quais são os estados com mais autos de infração?"
-- "Qual o valor médio das multas aplicadas?"
-- "Como variou o número de autos de infração ao longo dos anos?"
-- "Mostre dados sobre biopirataria no Amazonas"
-- "Quais são as infrações de pesca no Ceará?"
+### **Para Pesquisadores:**
+1. **Use o Explorador SQL** para consultas complexas
+2. **Aproveite os filtros avançados** por período e região
+3. **Documente** suas consultas para reprodutibilidade
+4. **Cite adequadamente** a fonte dos dados (Portal IBAMA)
 
-### Explorador de Dados
-Execute consultas SQL personalizadas e crie visualizações específicas.
+### **Para Desenvolvedores:**
+1. **Fork o repositório** para customizações
+2. **Consulte a documentação** do código (comentários inline)
+3. **Contribua** com melhorias via Pull Requests
+4. **Reporte bugs** na seção Issues do GitHub
 
-### Ferramentas de Diagnóstico
-Seção para desenvolvedores com ferramentas para:
-- Verificar a estrutura do banco de dados
-- Testar a geração de SQL com LLMs
-- Testar o sistema de detecção de biopirataria
-- Executar consultas pré-definidas por categoria
+## 📊 Dados e Fontes
 
-## Hospedagem no Streamlit Community Cloud
+### **Fonte Oficial**
+- **Origem**: [Portal de Dados Abertos do IBAMA](https://dadosabertos.ibama.gov.br/dataset/fiscalizacao-auto-de-infracao)
+- **Formato**: CSV compactado, atualizado periodicamente
+- **Licença**: Dados públicos, domínio público brasileiro
 
-1. Faça o fork deste repositório para sua conta GitHub
-2. Acesse [Streamlit Community Cloud](https://streamlit.io/cloud)
-3. Conecte com sua conta GitHub
-4. Selecione o repositório e configure:
-   - Nome do aplicativo: `ibama-analise`
-   - Arquivo principal: `app.py`
-   - Adicione suas variáveis secretas em Advanced Settings
+### **Estrutura dos Dados**
+- **Período**: Principalmente 2024-2025
+- **Granularidade**: Por auto de infração individual
+- **Geolocalização**: Coordenadas quando disponíveis
+- **Classificação**: Tipo, gravidade, status da infração
 
-## Arquitetura
+### **Processamento**
+- **Limpeza automática**: Remoção de duplicatas e dados inválidos
+- **Validação**: Verificação de formatos (CPF/CNPJ, datas, valores)
+- **Enriquecimento**: Adição de análises geográficas e temporais
 
-O aplicativo utiliza uma arquitetura moderna baseada em:
+## 🤝 Como Contribuir
 
-1. **Interface do Usuário**: Streamlit para criar a interface web interativa
-2. **Armazenamento de Dados**: DuckDB (local) e Supabase (opcional, remoto)
-3. **Processamento de Linguagem Natural**:
-   - Llama 3.1 via Groq para geração de SQL e explicações
-   - LiteLLM para compatibilidade com diferentes provedores de LLM
-   - LangChain para busca de informações por similaridade
-4. **Análise de Dados**:
-   - Pandas e SQLAlchemy para manipulação de dados
-   - Plotly e Matplotlib para visualizações
-5. **Detecção Especializada**: 
-   - Sistema personalizado para detecção de consultas sobre biopirataria
-   - Tratamento diferenciado para terminologias específicas de crimes ambientais
+### **Para Usuários:**
+- **Reporte bugs** ou problemas encontrados
+- **Sugira melhorias** de funcionalidade
+- **Compartilhe** casos de uso interessantes
 
-## Tecnologias
+### **Para Desenvolvedores:**
+- **Fork** o repositório
+- **Crie branch** para sua feature: `git checkout -b feature/nova-funcionalidade`
+- **Commit** suas mudanças: `git commit -m 'Adiciona nova funcionalidade'`
+- **Push** para branch: `git push origin feature/nova-funcionalidade`
+- **Abra Pull Request** explicando as mudanças
 
-- **Streamlit**: Interface do aplicativo
-- **DuckDB**: Armazenamento local de dados
-- **Supabase**: Banco de dados online (opcional)
-- **Groq**: API para acesso aos modelos Llama 3.1
-- **LangChain**: Framework para RAG (Retrieval Augmented Generation)
-- **LiteLLM**: Camada de abstração para APIs de LLM
-- **SmolagentS**: Framework para agentes de IA
-- **Plotly**: Visualização interativa de dados
-- **APScheduler**: Programação de tarefas automáticas
-- **FAISS**: Busca eficiente por similaridade em embeddings
+### **Diretrizes de Contribuição:**
+- Mantenha o código limpo e documentado
+- Adicione testes quando possível
+- Siga as convenções de estilo Python (PEP 8)
+- Atualize documentação quando necessário
 
-## Dados
+## 📝 Roadmap e Versões Futuras
 
-Os dados utilizados são disponibilizados pelo IBAMA em formato CSV compactado, atualizados periodicamente:
-- [Página do dataset](https://dadosabertos.ibama.gov.br/dataset/fiscalizacao-auto-de-infracao)
-- [Link direto para o ZIP](https://dadosabertos.ibama.gov.br/dados/SIFISC/auto_infracao/auto_infracao/auto_infracao_csv.zip)
+### **🚧 Versão Atual (Beta)**
+- ✅ Dashboard básico funcionando
+- ✅ Chatbot com IA integrado
+- ✅ Explorador SQL operacional
+- ✅ Filtros avançados implementados
 
-## Licença
+### **🎯 Próximas Versões**
+- **v1.0** (Estável):
+  - 📈 Análises preditivas com Machine Learning
+  - 📋 Sistema de relatórios automatizados
+  - 🔄 API REST para integração externa
+  - 📱 Responsividade mobile aprimorada
 
-Este projeto é distribuído sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
+- **v1.1** (Expansão):
+  - 🌍 Integração com dados de outros órgãos ambientais
+  - 📊 Dashboard para gestores públicos
+  - 🔔 Sistema de alertas personalizados
+  - 📈 Análise de tendências avançada
 
-## Autor
+## ⚖️ Aspectos Legais e Éticos
 
-Este projeto foi desenvolvido como demonstração de análise de dados públicos com tecnologias modernas de IA. 
+### **Uso Responsável**
+- **Presunção de inocência**: Multas não significam culpa confirmada
+- **Contexto necessário**: Dados isolados podem ser enganosos
+- **Verificação**: Sempre confirme informações importantes
+- **Privacidade**: Respeite dados pessoais mascarados
+
+### **Transparência**
+- **Código aberto**: Algoritmos auditáveis publicamente
+- **Metodologia clara**: Processamento de dados documentado
+- **Limitações explícitas**: Avisos sobre restrições e vieses
+
+## 📞 Suporte e Contato
+
+### **Desenvolvedor**
+- **Nome**: Reinaldo Chaves
+- **GitHub**: [@reichaves](https://github.com/reichaves)
+- **Projeto**: [github.com/reichaves/ibama_dashboard](https://github.com/reichaves/ibama_dashboard)
+
+### **Suporte**
+- **Issues**: Use o GitHub Issues para bugs e sugestões
+- **Documentação**: README e comentários no código
+- **Comunidade**: Streamlit Community para dúvidas técnicas
+
+### **Citação Acadêmica**
+```
+Chaves, R. (2024). IBAMA Dashboard - Análise de Infrações Ambientais. 
+Disponível em: https://github.com/reichaves/ibama_dashboard
+```
+
+## 📄 Licença
+
+Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para detalhes completos.
+
+---
+
+**⚠️ Aviso Legal**: Este projeto é uma iniciativa independente para democratização de dados públicos. Não possui vinculação oficial com o IBAMA ou governo brasileiro. Use as informações com responsabilidade e sempre verifique dados importantes nas fontes oficiais.
+
+**🔍 Transparência**: Todo o código é aberto e auditável. Contribuições e melhorias são bem-vindas da comunidade.
+
+---
+
+*Última atualização: Julho 2025 | Versão: Beta 0.9*
