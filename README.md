@@ -272,7 +272,7 @@ SUPABASE_KEY=sua_chave_supabase
 
 ### **Citação Acadêmica**
 ```
-Chaves, R. (2024). IBAMA Dashboard - Análise de Infrações Ambientais. 
+Chaves, R. (2025). IBAMA Dashboard - Análise de Infrações Ambientais. 
 Disponível em: https://github.com/reichaves/ibama_dashboard
 ```
 
