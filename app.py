@@ -236,6 +236,313 @@ def format_period_description(selected_periods):
     
     return "; ".join(descriptions)
 
+# Adicione esta função no app.py para criar uma página de diagnóstico completa
+
+def create_diagnostic_page():
+    """Cria página completa de diagnóstico integrada no Streamlit."""
+    st.header("🔧 Diagnóstico Completo do Sistema")
+    st.caption("Ferramenta avançada para debug e verificação de integridade dos dados")
+    
+    # Status geral
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("🔍 Teste Completo", type="primary"):
+            run_complete_diagnostic()
+    
+    with col2:
+        if st.button("📊 Contagem Real"):
+            test_real_count()
+    
+    with col3:
+        if st.button("🧹 Reset Total"):
+            reset_all_caches()
+    
+    st.divider()
+    
+    # Seção de logs em tempo real
+    if st.checkbox("📝 Mostrar Logs Detalhados"):
+        st.subheader("📋 Logs do Sistema")
+        
+        # Container para logs
+        log_container = st.empty()
+        
+        # Captura logs
+        if st.button("▶️ Executar Diagnóstico com Logs"):
+            run_diagnostic_with_logs(log_container)
+
+def run_complete_diagnostic():
+    """Executa diagnóstico completo dentro do Streamlit."""
+    try:
+        st.subheader("🔍 Executando Diagnóstico Completo...")
+        
+        # Progresso
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # Teste 1: Conexão
+        status_text.text("1/5 - Testando conexão com Supabase...")
+        progress_bar.progress(20)
+        
+        if not st.session_state.db.is_cloud or not st.session_state.db.supabase:
+            st.error("❌ Não conectado ao Supabase")
+            return
+        
+        st.success("✅ Conexão com Supabase OK")
+        
+        # Teste 2: Contagem real no banco
+        status_text.text("2/5 - Verificando contagem real no banco...")
+        progress_bar.progress(40)
+        
+        if not hasattr(st.session_state.viz, 'paginator') or not st.session_state.viz.paginator:
+            st.error("❌ Paginador não inicializado")
+            return
+        
+        real_counts = st.session_state.viz.paginator.get_real_count()
+        
+        if 'error' in real_counts:
+            st.error(f"❌ Erro na contagem: {real_counts['error']}")
+            return
+        
+        # Teste 3: Paginação
+        status_text.text("3/5 - Testando paginação...")
+        progress_bar.progress(60)
+        
+        # Força nova busca sem cache
+        st.session_state.viz.paginator.clear_cache()
+        
+        # Gera nova chave de cache
+        import time, random
+        new_cache_key = f"diagnostic_{time.time()}_{random.randint(1000, 9999)}"
+        
+        df_paginated = st.session_state.viz.paginator.get_all_records('ibama_infracao', new_cache_key)
+        
+        # Teste 4: Análise dos dados
+        status_text.text("4/5 - Analisando dados carregados...")
+        progress_bar.progress(80)
+        
+        paginated_count = len(df_paginated)
+        paginated_unique = df_paginated['NUM_AUTO_INFRACAO'].nunique() if 'NUM_AUTO_INFRACAO' in df_paginated.columns else 0
+        
+        # Teste 5: Validação
+        status_text.text("5/5 - Validando resultados...")
+        progress_bar.progress(100)
+        
+        # Resultados
+        st.subheader("📊 Resultados do Diagnóstico")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("📊 Total no Banco", f"{real_counts['total_records']:,}")
+            st.metric("🔢 Únicos no Banco", f"{real_counts['unique_infractions']:,}")
+            st.metric("📉 Duplicatas", f"{real_counts.get('duplicates', 0):,}")
+        
+        with col2:
+            st.metric("📊 Paginação Total", f"{paginated_count:,}")
+            st.metric("🔢 Paginação Únicos", f"{paginated_unique:,}")
+            
+            # Calcula diferença
+            if paginated_unique > 0:
+                diff = real_counts['unique_infractions'] - paginated_unique
+                st.metric("🔄 Diferença", f"{diff:,}", delta=f"{diff:,}")
+        
+        # Análise de status
+        st.subheader("🎯 Análise de Status")
+        
+        # Verifica se dados estão corretos
+        expected_total = 21030
+        expected_unique = 21019
+        
+        if real_counts['total_records'] == expected_total and real_counts['unique_infractions'] == expected_unique:
+            st.success("✅ **DADOS DO BANCO CORRETOS**")
+            st.success(f"✅ 21.030 registros, 21.019 únicos conforme esperado")
+        else:
+            st.error("❌ **DADOS DO BANCO INCORRETOS**")
+            st.error(f"❌ Esperado: 21.030/21.019, Atual: {real_counts['total_records']:,}/{real_counts['unique_infractions']:,}")
+        
+        # Verifica paginação
+        if paginated_unique == expected_unique:
+            st.success("✅ **PAGINAÇÃO FUNCIONANDO**")
+            st.success("✅ Dashboard deve mostrar 21.019 infrações")
+        elif paginated_unique == 0:
+            st.error("❌ **PAGINAÇÃO FALHOU COMPLETAMENTE**")
+            st.error("❌ Nenhum dado foi carregado pela paginação")
+        else:
+            st.warning("⚠️ **PAGINAÇÃO PARCIAL**")
+            st.warning(f"⚠️ Carregou apenas {paginated_unique:,} de {expected_unique:,} infrações")
+            
+            # Sugere soluções
+            st.subheader("🔧 Soluções Sugeridas")
+            
+            if paginated_unique < expected_unique:
+                st.info("💡 **Possíveis causas:**")
+                st.write("• Limite de paginação muito baixo")
+                st.write("• Timeout na conexão")
+                st.write("• Filtros aplicados incorretamente")
+                st.write("• Cache corrompido")
+                
+                if st.button("🚀 Tentar Correção Automática"):
+                    fix_pagination_issues()
+        
+        # Timestamp
+        st.caption(f"⏰ Diagnóstico executado em: {real_counts['timestamp']}")
+        
+    except Exception as e:
+        st.error(f"❌ Erro no diagnóstico: {e}")
+        st.code(str(e), language="python")
+
+def test_real_count():
+    """Testa apenas a contagem real do banco."""
+    try:
+        st.subheader("📊 Testando Contagem Real")
+        
+        with st.spinner("Verificando dados no banco..."):
+            real_counts = st.session_state.viz.paginator.get_real_count()
+        
+        if 'error' in real_counts:
+            st.error(f"❌ {real_counts['error']}")
+            return
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Total Registros", f"{real_counts['total_records']:,}")
+        
+        with col2:
+            st.metric("Infrações Únicas", f"{real_counts['unique_infractions']:,}")
+        
+        with col3:
+            duplicates = real_counts.get('duplicates', 0)
+            st.metric("Duplicatas", f"{duplicates:,}")
+        
+        # Verifica se está correto
+        if real_counts['total_records'] == 21030 and real_counts['unique_infractions'] == 21019:
+            st.success("✅ Dados do banco estão corretos!")
+        else:
+            st.error("❌ Dados do banco estão incorretos!")
+            st.error("❌ Esperado: 21.030 total, 21.019 únicos")
+            
+    except Exception as e:
+        st.error(f"❌ Erro: {e}")
+
+def reset_all_caches():
+    """Reset completo de todos os caches."""
+    try:
+        st.subheader("🧹 Reset Completo de Caches")
+        
+        with st.spinner("Limpando todos os caches..."):
+            # Limpa cache do paginador
+            if hasattr(st.session_state.viz, 'paginator') and st.session_state.viz.paginator:
+                st.session_state.viz.paginator.clear_cache()
+            
+            # Limpa cache do Streamlit
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            
+            # Remove componentes da sessão
+            components_to_remove = ['viz', 'chatbot', 'session_id']
+            for component in components_to_remove:
+                if component in st.session_state:
+                    del st.session_state[component]
+        
+        st.success("✅ Todos os caches foram limpos!")
+        st.info("💡 Recarregue a página (F5) para ver os dados atualizados")
+        
+        # Botão para recarregar
+        if st.button("🔄 Recarregar Sistema"):
+            st.rerun()
+            
+    except Exception as e:
+        st.error(f"❌ Erro no reset: {e}")
+
+def fix_pagination_issues():
+    """Tenta corrigir problemas de paginação automaticamente."""
+    try:
+        st.subheader("🔧 Aplicando Correções")
+        
+        progress = st.progress(0)
+        
+        # Correção 1: Aumenta limite de páginas
+        progress.progress(25)
+        st.write("1/4 - Aumentando limite de paginação...")
+        
+        if hasattr(st.session_state.viz.paginator, 'page_size'):
+            # Reduz page_size para mais páginas
+            st.session_state.viz.paginator.page_size = 500
+            st.success("✅ Page size reduzido para 500 (mais páginas)")
+        
+        # Correção 2: Limpa cache específico
+        progress.progress(50)
+        st.write("2/4 - Limpando cache específico...")
+        st.session_state.viz.paginator.clear_cache()
+        st.success("✅ Cache específico limpo")
+        
+        # Correção 3: Força nova sessão
+        progress.progress(75)
+        st.write("3/4 - Gerando nova sessão...")
+        if 'session_id' in st.session_state:
+            del st.session_state.session_id
+        st.success("✅ Nova sessão criada")
+        
+        # Correção 4: Testa nova busca
+        progress.progress(100)
+        st.write("4/4 - Testando nova busca...")
+        
+        import time, random
+        test_key = f"fix_test_{time.time()}_{random.randint(1000, 9999)}"
+        
+        # Busca uma amostra para testar
+        test_df = st.session_state.viz.paginator.get_sample_data(2000)
+        
+        if not test_df.empty:
+            test_unique = test_df['NUM_AUTO_INFRACAO'].nunique() if 'NUM_AUTO_INFRACAO' in test_df.columns else 0
+            st.success(f"✅ Teste OK: {len(test_df)} registros, {test_unique} únicos")
+            
+            if test_unique > 1000:  # Se conseguiu uma boa amostra
+                st.success("🎉 Correção aplicada com sucesso!")
+                st.info("💡 Recarregue a página para ver os dados corretos")
+            else:
+                st.warning("⚠️ Correção parcial - ainda há problemas na paginação")
+        else:
+            st.error("❌ Correção falhou - problema persiste")
+        
+    except Exception as e:
+        st.error(f"❌ Erro na correção: {e}")
+
+def run_diagnostic_with_logs(log_container):
+    """Executa diagnóstico com logs em tempo real."""
+    import sys
+    from io import StringIO
+    
+    # Captura logs
+    old_stdout = sys.stdout
+    sys.stdout = captured_output = StringIO()
+    
+    try:
+        # Executa diagnóstico
+        real_counts = st.session_state.viz.paginator.get_real_count()
+        df = st.session_state.viz.paginator.get_all_records()
+        
+        # Restaura stdout
+        sys.stdout = old_stdout
+        
+        # Mostra logs capturados
+        logs = captured_output.getvalue()
+        if logs:
+            log_container.code(logs, language="text")
+        else:
+            log_container.info("Nenhum log capturado")
+            
+    except Exception as e:
+        sys.stdout = old_stdout
+        log_container.error(f"Erro: {e}")
+
+# Para usar no app.py, adicione esta aba:
+# tab4 = st.tabs(["📊 Dashboard", "💬 Chatbot", "🔍 SQL", "🔧 Diagnóstico"])
+# with tab4:
+#     create_diagnostic_page()
+
 def main():
     st.title("🌳 Análise de Autos de Infração do IBAMA (versão beta)")
     
@@ -477,7 +784,7 @@ def main():
             """)
 
     # Abas principais
-    tab1, tab2, tab3 = st.tabs(["📊 Dashboard Interativo", "💬 Chatbot com IA", "🔍 Explorador SQL"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard Interativo", "💬 Chatbot com IA", "🔍 Explorador SQL", "🔧 Diagnóstico"])
     
     with tab1:
         st.header("Dashboard de Análise de Infrações Ambientais")
@@ -526,7 +833,10 @@ def main():
             st.session_state.chatbot.display_chat_interface()
         except Exception as e:
             st.error(f"Erro no chatbot: {e}")
-    
+
+    with tab4:
+        create_diagnostic_page()
+        
     with tab3:
         st.header("Explorador de Dados SQL")
         
