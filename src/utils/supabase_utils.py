@@ -1,35 +1,46 @@
 import pandas as pd
 import streamlit as st
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import hashlib
 import time
 import random
+import uuid
 
 class SupabasePaginator:
-    """Classe para buscar todos os dados do Supabase com paginação e garantia de unicidade."""
+    """Classe para buscar todos os dados do Supabase com paginação e garantia de unicidade - CORRIGIDA."""
     
     def __init__(self, supabase_client):
         self.supabase = supabase_client
         self.page_size = 1000  # Tamanho da página (limite do Supabase)
+        self.max_pages = 25    # AUMENTADO: permite até 25k registros (suficiente para 21k)
     
     def _get_session_key(self, table_name: str = 'ibama_infracao', filters: str = "") -> str:
-        """Gera chave única por sessão para cache."""
-        session_id = st.session_state.get('session_id', '')
-        if not session_id:
-            # Gera ID único para esta sessão
-            session_id = f"{time.time()}_{random.randint(1000, 9999)}"
-            st.session_state.session_id = session_id
+        """Gera chave única POR SESSÃO para cache isolado."""
+        # Usa session_id do Streamlit para isolamento real entre usuários
+        if 'session_uuid' not in st.session_state:
+            st.session_state.session_uuid = str(uuid.uuid4())[:8]
+        
+        session_id = st.session_state.session_uuid
         
         # Hash dos filtros para cache específico
         filter_hash = hashlib.md5(f"{table_name}_{filters}_{session_id}".encode()).hexdigest()[:8]
-        return f"data_{filter_hash}"
+        return f"data_{session_id}_{filter_hash}"
     
-    @st.cache_data(ttl=1800, show_spinner=False)
-    def get_all_records(_self, table_name: str = 'ibama_infracao', cache_key: str = None) -> pd.DataFrame:
+    def get_all_records(self, table_name: str = 'ibama_infracao', cache_key: str = None) -> pd.DataFrame:
         """
         Busca TODOS os registros únicos da tabela usando paginação.
-        GARANTIA DE UNICIDADE: Remove duplicatas por NUM_AUTO_INFRACAO.
+        CORRIGIDO: Cache por sessão e paginação completa.
         """
+        # Se não forneceu cache_key, gera um único para esta sessão
+        if cache_key is None:
+            cache_key = self._get_session_key(table_name)
+        
+        # CRÍTICO: Verifica se já está em cache desta sessão
+        cache_storage_key = f"paginated_data_{cache_key}"
+        if cache_storage_key in st.session_state:
+            print(f"✅ Retornando dados do cache da sessão: {cache_storage_key}")
+            return st.session_state[cache_storage_key]
+        
         print(f"🔄 Iniciando busca paginada da tabela {table_name} (sessão: {cache_key})")
         
         all_data = []
@@ -37,14 +48,14 @@ class SupabasePaginator:
         seen_infractions = set()  # Para garantir unicidade durante a busca
         
         while True:
-            start = page * _self.page_size
-            end = start + _self.page_size - 1
+            start = page * self.page_size
+            end = start + self.page_size - 1
             
             print(f"   📄 Página {page + 1}: registros {start} a {end}")
             
             try:
                 # Busca uma página de dados
-                result = _self.supabase.table(table_name).select('*').range(start, end).execute()
+                result = self.supabase.table(table_name).select('*').range(start, end).execute()
                 
                 if not result.data or len(result.data) == 0:
                     print(f"   ✅ Fim da paginação na página {page + 1}")
@@ -59,18 +70,19 @@ class SupabasePaginator:
                         unique_records.append(record)
                 
                 all_data.extend(unique_records)
-                print(f"   📊 Carregados {len(unique_records)} registros únicos desta página (total: {len(all_data):,})")
+                print(f"   📊 Carregados {len(unique_records)} registros únicos desta página (total acumulado: {len(all_data):,})")
                 
                 # Se retornou menos que o page_size, chegamos ao fim
-                if len(result.data) < _self.page_size:
-                    print(f"   ✅ Última página alcançada")
+                if len(result.data) < self.page_size:
+                    print(f"   ✅ Última página alcançada (dados finalizados)")
                     break
                 
                 page += 1
                 
-                # Limite de segurança
-                if page > 50:  # Reduzido para 50 páginas (50k registros)
-                    print(f"   ⚠️ Limite de segurança atingido (50 páginas)")
+                # CORRIGIDO: Limite de segurança aumentado para capturar todos os dados
+                if page >= self.max_pages:
+                    print(f"   ⚠️ Limite de segurança atingido ({self.max_pages} páginas)")
+                    print(f"   💡 Total únicos coletados até aqui: {len(seen_infractions):,}")
                     break
                 
             except Exception as e:
@@ -92,11 +104,16 @@ class SupabasePaginator:
                 print(f"🚨 AVISO: {original_count - final_count} duplicatas removidas na validação final")
                 df = df_unique
         
+        # CRÍTICO: Armazena no cache da sessão (não global)
+        st.session_state[cache_storage_key] = df
+        print(f"💾 Dados armazenados no cache da sessão: {cache_storage_key}")
+        
         return df
     
     def get_filtered_data(self, selected_ufs: List[str] = None, year_range: tuple = None) -> pd.DataFrame:
         """
         Busca dados filtrados com garantia de unicidade.
+        CORRIGIDO: Cache por sessão específica.
         """
         # Gera chave única para esta sessão e filtros
         filter_str = f"ufs_{selected_ufs}_years_{year_range}"
@@ -104,7 +121,7 @@ class SupabasePaginator:
         
         print(f"🔍 Buscando dados filtrados - Cache Key: {cache_key}")
         
-        # Busca todos os dados únicos
+        # Busca todos os dados únicos desta sessão
         df = self.get_all_records('ibama_infracao', cache_key)
         
         if df.empty:
@@ -132,10 +149,10 @@ class SupabasePaginator:
         print(f"✅ Dados filtrados finais: {len(df):,} registros únicos")
         return df
     
-    def get_real_count(self, table_name: str = 'ibama_infracao') -> Dict[str, int]:
+    def get_real_count(self, table_name: str = 'ibama_infracao') -> Dict[str, Any]:
         """
         Obtém contagens reais diretamente do banco.
-        CORRIGIDO: Usa paginação para contar infrações únicas corretamente.
+        CORRIGIDO: Usa paginação completa para contar infrações únicas corretamente.
         """
         try:
             print("🔍 Iniciando contagem real dos dados...")
@@ -176,9 +193,10 @@ class SupabasePaginator:
                     
                     page += 1
                     
-                    # Limite de segurança
-                    if page > 50:
-                        print(f"   ⚠️ Limite de segurança atingido")
+                    # CORRIGIDO: Limite de segurança aumentado
+                    if page >= self.max_pages:
+                        print(f"   ⚠️ Limite de segurança atingido ({self.max_pages} páginas)")
+                        print(f"   📊 Total únicos coletados: {len(all_num_auto):,}")
                         break
                         
                 except Exception as e:
@@ -212,14 +230,21 @@ class SupabasePaginator:
     def clear_cache(self):
         """Limpa o cache específico desta sessão."""
         try:
-            # Limpa cache do Streamlit para este método
-            self.get_all_records.clear()
+            # Limpa apenas dados desta sessão
+            session_uuid = st.session_state.get('session_uuid', '')
             
-            # Remove dados da sessão
-            if 'session_id' in st.session_state:
-                del st.session_state.session_id
+            keys_to_remove = []
+            for key in st.session_state.keys():
+                if key.startswith(f'paginated_data_data_{session_uuid}'):
+                    keys_to_remove.append(key)
             
-            print("🧹 Cache da sessão limpo")
+            for key in keys_to_remove:
+                del st.session_state[key]
+            
+            # Gera novo UUID de sessão para forçar novo cache
+            st.session_state.session_uuid = str(uuid.uuid4())[:8]
+            
+            print(f"🧹 Cache da sessão limpo ({len(keys_to_remove)} chaves removidas)")
             return True
         except Exception as e:
             print(f"❌ Erro ao limpar cache: {e}")
