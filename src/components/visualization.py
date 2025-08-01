@@ -50,6 +50,7 @@ class DataVisualization:
         """
         Garante que os dados sejam únicos por NUM_AUTO_INFRACAO.
         FUNÇÃO CRÍTICA para evitar contagem duplicada.
+        CORRIGIDA: Não remove duplicatas se já foram tratadas na paginação.
         """
         if df.empty:
             return df
@@ -59,15 +60,17 @@ class DataVisualization:
             df_valid = df[df['NUM_AUTO_INFRACAO'].notna() & (df['NUM_AUTO_INFRACAO'] != '')]
             
             if not df_valid.empty:
-                # Remove duplicatas baseado em NUM_AUTO_INFRACAO
+                # Verifica se há duplicatas
                 original_count = len(df_valid)
-                df_unique = df_valid.drop_duplicates(subset=['NUM_AUTO_INFRACAO'], keep='first')
-                unique_count = len(df_unique)
+                unique_count = df_valid['NUM_AUTO_INFRACAO'].nunique()
                 
                 if original_count != unique_count:
-                    print(f"⚠️ DUPLICATAS REMOVIDAS: {original_count} registros → {unique_count} únicos")
-                
-                return df_unique
+                    print(f"⚠️ DUPLICATAS DETECTADAS: {original_count} registros → {unique_count} únicos")
+                    df_unique = df_valid.drop_duplicates(subset=['NUM_AUTO_INFRACAO'], keep='first')
+                    return df_unique
+                else:
+                    print(f"✅ DADOS JÁ ÚNICOS: {original_count} registros únicos confirmados")
+                    return df_valid
             else:
                 print("⚠️ Nenhum NUM_AUTO_INFRACAO válido encontrado")
                 return df
@@ -119,9 +122,14 @@ class DataVisualization:
         """Obtém dados filtrados usando os novos filtros avançados de data."""
         
         if self.paginator:
-            # Usa paginação para buscar todos os dados
-            print("🔄 Usando paginação para buscar todos os dados...")
-            df = self.paginator.get_all_records()
+            # Usa paginação para buscar todos os dados ÚNICOS
+            print("🔄 Usando paginação para buscar todos os dados únicos...")
+            
+            # Gera cache key específico para estes filtros
+            filter_str = f"ufs_{selected_ufs}_periods_{date_filters.get('periods', date_filters.get('years', []))}"
+            cache_key = self.paginator._get_session_key('ibama_infracao', filter_str)
+            
+            df = self.paginator.get_all_records('ibama_infracao', cache_key)
         else:
             # Fallback para método tradicional (DuckDB ou erro no Supabase)
             print("⚠️ Usando método tradicional (sem paginação)")
@@ -138,7 +146,7 @@ class DataVisualization:
                 st.error(f"Erro ao obter dados: {e}")
                 return pd.DataFrame()
         
-        # GARANTIA DE UNICIDADE - SEMPRE aplica primeiro
+        # Dados do paginador JÁ são únicos, mas valida por segurança
         df = self._ensure_unique_data(df)
         
         if df.empty:
@@ -147,9 +155,11 @@ class DataVisualization:
         # Aplica filtro de UF
         if selected_ufs and 'UF' in df.columns:
             df = df[df['UF'].isin(selected_ufs)]
+            print(f"🗺️ Após filtro UF: {len(df):,} registros únicos")
         
         # Aplica filtros de data avançados
         df = self._apply_date_filter_to_dataframe(df, date_filters)
+        print(f"📅 Após filtros de data: {len(df):,} registros únicos")
         
         return df
 
