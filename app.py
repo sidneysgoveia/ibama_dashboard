@@ -330,6 +330,69 @@ def main():
 
         st.divider()
         
+        # ======================== SEÇÃO DE DIAGNÓSTICO ========================
+        st.subheader("🔧 Diagnóstico")
+        
+        if st.button("🔍 Verificar Dados Reais", help="Verifica contagem real no banco de dados"):
+            if st.session_state.db.is_cloud and hasattr(st.session_state, 'viz') and st.session_state.viz.paginator:
+                try:
+                    with st.spinner("Verificando dados no banco..."):
+                        real_counts = st.session_state.viz.paginator.get_real_count()
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.success(f"✅ **Total no banco:** {real_counts['total_records']:,}")
+                        with col2:
+                            st.success(f"✅ **Infrações únicas:** {real_counts['unique_infractions']:,}")
+                        
+                        st.caption(f"⏰ Verificado em: {real_counts['timestamp']}")
+                        
+                        # Verifica consistência
+                        if real_counts['total_records'] != real_counts['unique_infractions']:
+                            difference = real_counts['total_records'] - real_counts['unique_infractions']
+                            st.warning(f"⚠️ **{difference:,} registros duplicados** detectados no banco")
+                        else:
+                            st.info("ℹ️ Todos os registros são únicos no banco")
+                            
+                except Exception as e:
+                    st.error(f"❌ Erro na verificação: {str(e)}")
+            else:
+                st.warning("⚠️ Diagnóstico disponível apenas para modo cloud com Supabase")
+        
+        if st.button("🧹 Limpar Cache da Sessão", help="Remove cache local desta sessão"):
+            try:
+                # Limpa cache do visualization
+                if hasattr(st.session_state, 'viz') and st.session_state.viz.paginator:
+                    st.session_state.viz.paginator.clear_cache()
+                
+                # Limpa cache do Streamlit
+                st.cache_data.clear()
+                st.cache_resource.clear()
+                
+                # Remove dados da sessão
+                session_keys_to_remove = ['viz', 'chatbot']
+                for key in session_keys_to_remove:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                
+                st.success("✅ Cache limpo! Recarregue a página para ver os dados atualizados.")
+                st.info("💡 **Dica:** Use F5 ou Ctrl+R para recarregar completamente")
+                
+            except Exception as e:
+                st.error(f"❌ Erro ao limpar cache: {str(e)}")
+        
+        # Informações sobre qualidade dos dados
+        if st.button("📊 Qualidade dos Dados", help="Exibe informações detalhadas sobre os dados carregados"):
+            if hasattr(st.session_state, 'viz'):
+                try:
+                    st.session_state.viz.display_data_quality_info(selected_ufs, date_filters)
+                except Exception as e:
+                    st.error(f"❌ Erro ao obter informações de qualidade: {str(e)}")
+            else:
+                st.warning("⚠️ Componente de visualização não inicializado")
+
+        st.divider()
+        
         # ======================== FILTROS DO LLM ========================
         st.subheader("🤖 Configurações de IA")
         
@@ -410,7 +473,7 @@ def main():
                 
                 **Desenvolvido por:** Reinaldo Chaves - [GitHub](https://github.com/reichaves/ibama_dashboard)
 
-                **reichaves@gmail.com
+                **E-mail:** reichaves@gmail.com
             """)
 
     # Abas principais
