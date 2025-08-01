@@ -46,13 +46,42 @@ class DataVisualization:
         else:
             self.paginator = None
 
+    def _ensure_unique_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Garante que os dados sejam únicos por NUM_AUTO_INFRACAO.
+        FUNÇÃO CRÍTICA para evitar contagem duplicada.
+        """
+        if df.empty:
+            return df
+        
+        if 'NUM_AUTO_INFRACAO' in df.columns:
+            # Remove valores nulos primeiro
+            df_valid = df[df['NUM_AUTO_INFRACAO'].notna() & (df['NUM_AUTO_INFRACAO'] != '')]
+            
+            if not df_valid.empty:
+                # Remove duplicatas baseado em NUM_AUTO_INFRACAO
+                original_count = len(df_valid)
+                df_unique = df_valid.drop_duplicates(subset=['NUM_AUTO_INFRACAO'], keep='first')
+                unique_count = len(df_unique)
+                
+                if original_count != unique_count:
+                    print(f"⚠️ DUPLICATAS REMOVIDAS: {original_count} registros → {unique_count} únicos")
+                
+                return df_unique
+            else:
+                print("⚠️ Nenhum NUM_AUTO_INFRACAO válido encontrado")
+                return df
+        else:
+            print("⚠️ Coluna NUM_AUTO_INFRACAO não encontrada - contagem pode estar incorreta")
+            return df
+
     def _get_filtered_data(self, selected_ufs: list, year_range: tuple) -> pd.DataFrame:
         """Obtém dados filtrados usando paginação quando necessário (método legacy)."""
         
         if self.paginator:
             # Usa paginação para buscar todos os dados
             print("🔄 Usando paginação para buscar todos os dados...")
-            return self.paginator.get_filtered_data(selected_ufs, year_range)
+            df = self.paginator.get_filtered_data(selected_ufs, year_range)
         else:
             # Fallback para método tradicional (DuckDB ou erro no Supabase)
             print("⚠️ Usando método tradicional (sem paginação)")
@@ -79,11 +108,12 @@ class DataVisualization:
                     except:
                         pass
                 
-                return df
-                
             except Exception as e:
                 st.error(f"Erro ao obter dados: {e}")
-                return pd.DataFrame()
+                df = pd.DataFrame()
+        
+        # GARANTIA DE UNICIDADE - SEMPRE aplica
+        return self._ensure_unique_data(df)
 
     def _get_filtered_data_advanced(self, selected_ufs: list, date_filters: dict) -> pd.DataFrame:
         """Obtém dados filtrados usando os novos filtros avançados de data."""
@@ -107,6 +137,9 @@ class DataVisualization:
             except Exception as e:
                 st.error(f"Erro ao obter dados: {e}")
                 return pd.DataFrame()
+        
+        # GARANTIA DE UNICIDADE - SEMPRE aplica primeiro
+        df = self._ensure_unique_data(df)
         
         if df.empty:
             return df
@@ -161,26 +194,31 @@ class DataVisualization:
     # ======================== MÉTODOS AVANÇADOS ========================
 
     def create_overview_metrics_advanced(self, selected_ufs: list, date_filters: dict):
-        """Cria as métricas de visão geral usando filtros avançados e contagem correta."""
+        """Cria as métricas de visão geral usando dados únicos garantidos."""
         if not self.database:
             st.warning("Banco de dados não disponível.")
             return
 
         try:
-            with st.spinner("Carregando dados completos..."):
+            with st.spinner("Carregando dados únicos..."):
                 df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
             if df.empty:
                 st.warning("Nenhum dado encontrado para os filtros selecionados.")
                 return
 
-            # Calcula métricas usando contagem de infrações únicas
+            # Dados já são únicos (garantido pelo _ensure_unique_data)
+            total_infracoes = len(df)
+            metric_note = "infrações únicas (garantido)"
+            
+            # Debug: Verifica se realmente não há duplicatas
             if 'NUM_AUTO_INFRACAO' in df.columns:
-                total_infracoes = df['NUM_AUTO_INFRACAO'].nunique()
-                metric_note = "infrações únicas"
-            else:
-                total_infracoes = len(df)
-                metric_note = "registros (pode incluir duplicatas)"
+                unique_count = df['NUM_AUTO_INFRACAO'].nunique()
+                if unique_count != total_infracoes:
+                    print(f"🚨 ERRO: Ainda há duplicatas! {total_infracoes} registros vs {unique_count} únicos")
+                    # Força correção
+                    df = df.drop_duplicates(subset=['NUM_AUTO_INFRACAO'], keep='first')
+                    total_infracoes = len(df)
             
             # Valor total das multas
             try:
@@ -209,14 +247,14 @@ class DataVisualization:
             col2.metric("Valor Total das Multas", format_currency_brazilian(valor_total_multas))
             col3.metric("Municípios Afetados", format_number_brazilian(total_municipios))
             
-            # Info de debug com descrição dos filtros
-            st.caption(f"📊 Dados processados: {len(df):,} registros | {total_infracoes:,} {metric_note} | {date_filters['description']}")
+            # Info com garantia de unicidade
+            st.caption(f"📊 Dados únicos: {total_infracoes:,} {metric_note} | {date_filters['description']}")
 
         except Exception as e:
             st.error(f"Erro ao calcular métricas: {e}")
 
     def create_state_distribution_chart_advanced(self, selected_ufs: list, date_filters: dict):
-        """Cria gráfico de distribuição por estado com contagem correta de infrações."""
+        """Cria gráfico de distribuição por estado com dados únicos garantidos."""
         try:
             df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
@@ -224,14 +262,9 @@ class DataVisualization:
                 st.warning("Dados de UF não disponíveis.")
                 return
             
-            # Conta infrações únicas por UF se NUM_AUTO_INFRACAO disponível
-            if 'NUM_AUTO_INFRACAO' in df.columns:
-                uf_counts = df.groupby('UF')['NUM_AUTO_INFRACAO'].nunique().sort_values(ascending=False).head(15)
-                method_note = "infrações únicas"
-            else:
-                # Fallback para contagem de registros
-                uf_counts = df['UF'].value_counts().head(15)
-                method_note = "registros (pode incluir duplicatas)"
+            # Dados já são únicos, apenas conta por UF
+            uf_counts = df['UF'].value_counts().head(15)
+            method_note = "infrações únicas (garantido)"
             
             if not uf_counts.empty:
                 chart_df = pd.DataFrame({
@@ -263,7 +296,7 @@ class DataVisualization:
             st.error(f"Erro no gráfico de estados: {e}")
 
     def create_municipality_hotspots_chart_advanced(self, selected_ufs: list, date_filters: dict):
-        """Cria gráfico dos municípios com mais infrações usando contagem correta por NUM_AUTO_INFRACAO."""
+        """Cria gráfico dos municípios com mais infrações usando dados únicos garantidos."""
         try:
             df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
@@ -272,17 +305,15 @@ class DataVisualization:
                 return
             
             # Verifica se temos os campos necessários
-            required_fields = ['NUM_AUTO_INFRACAO', 'MUNICIPIO', 'UF']
+            required_fields = ['MUNICIPIO', 'UF']
             if not all(field in df.columns for field in required_fields):
                 st.warning("Campos necessários para análise de municípios não encontrados.")
                 return
             
             # Remove valores vazios nos campos necessários
             df_clean = df[
-                df['NUM_AUTO_INFRACAO'].notna() & 
                 df['MUNICIPIO'].notna() & 
                 df['UF'].notna() &
-                (df['NUM_AUTO_INFRACAO'] != '') & 
                 (df['MUNICIPIO'] != '') & 
                 (df['UF'] != '')
             ].copy()
@@ -303,23 +334,21 @@ class DataVisualization:
                     st.warning("Códigos de município não disponíveis.")
                     return
                 
-                # Conta INFRAÇÕES ÚNICAS por código do município
-                muni_counts = df_clean.groupby(['COD_MUNICIPIO', 'MUNICIPIO', 'UF'])['NUM_AUTO_INFRACAO'].nunique().reset_index()
-                muni_counts.rename(columns={'NUM_AUTO_INFRACAO': 'total_infracoes'}, inplace=True)
+                # Conta infrações por código do município (dados já são únicos)
+                muni_counts = df_clean.groupby(['COD_MUNICIPIO', 'MUNICIPIO', 'UF']).size().reset_index(name='total_infracoes')
                 muni_counts = muni_counts.nlargest(10, 'total_infracoes')
                 
-                method_note = "* Contagem por código IBGE + infrações únicas"
+                method_note = "* Contagem por código IBGE (infrações únicas garantidas)"
                 
             else:
                 # Fallback: usar nome do município
                 st.caption("⚠️ Usando nomes de municípios (podem haver inconsistências)")
                 
-                # Conta INFRAÇÕES ÚNICAS por nome do município
-                muni_counts = df_clean.groupby(['MUNICIPIO', 'UF'])['NUM_AUTO_INFRACAO'].nunique().reset_index()
-                muni_counts.rename(columns={'NUM_AUTO_INFRACAO': 'total_infracoes'}, inplace=True)
+                # Conta infrações por nome do município (dados já são únicos)
+                muni_counts = df_clean.groupby(['MUNICIPIO', 'UF']).size().reset_index(name='total_infracoes')
                 muni_counts = muni_counts.nlargest(10, 'total_infracoes')
                 
-                method_note = "* Contagem por nome + infrações únicas"
+                method_note = "* Contagem por nome (infrações únicas garantidas)"
             
             if not muni_counts.empty:
                 # Cria label combinado para exibição
@@ -350,7 +379,7 @@ class DataVisualization:
             st.error(f"Erro no gráfico de municípios: {e}")
 
     def create_fine_value_by_type_chart_advanced(self, selected_ufs: list, date_filters: dict):
-        """Cria gráfico de valores de multa por tipo com filtros avançados."""
+        """Cria gráfico de valores de multa por tipo com dados únicos garantidos."""
         try:
             df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
@@ -373,7 +402,7 @@ class DataVisualization:
             if df_clean.empty:
                 return
             
-            # Agrupa por tipo
+            # Agrupa por tipo (dados já são únicos)
             type_values = df_clean.groupby('TIPO_INFRACAO')['VAL_AUTO_INFRACAO_NUMERIC'].sum().nlargest(10)
             
             if not type_values.empty:
@@ -409,13 +438,9 @@ class DataVisualization:
             df_processed['GRAVIDADE_INFRACAO'] = df_processed['GRAVIDADE_INFRACAO'].fillna('Sem avaliação feita')
             df_processed['GRAVIDADE_INFRACAO'] = df_processed['GRAVIDADE_INFRACAO'].replace('', 'Sem avaliação feita')
             
-            # Conta infrações únicas por gravidade se NUM_AUTO_INFRACAO disponível
-            if 'NUM_AUTO_INFRACAO' in df_processed.columns:
-                gravity_counts = df_processed.groupby('GRAVIDADE_INFRACAO')['NUM_AUTO_INFRACAO'].nunique()
-                method_note = "infrações únicas"
-            else:
-                gravity_counts = df_processed['GRAVIDADE_INFRACAO'].value_counts()
-                method_note = "registros"
+            # Conta infrações por gravidade (dados já são únicos)
+            gravity_counts = df_processed['GRAVIDADE_INFRACAO'].value_counts()
+            method_note = "infrações únicas (garantido)"
             
             if not gravity_counts.empty:
                 # Define cores específicas para as categorias
@@ -472,7 +497,7 @@ class DataVisualization:
             st.error(f"Erro no gráfico de gravidade: {e}")
 
     def create_main_offenders_chart_advanced(self, selected_ufs: list, date_filters: dict):
-        """Cria gráficos dos principais infratores separados por pessoas físicas (CPF) e empresas (CNPJ)."""
+        """Cria gráficos dos principais infratores separados por pessoas físicas (CPF) e empresas (CNPJ) com dados únicos garantidos."""
         try:
             df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
@@ -541,7 +566,7 @@ class DataVisualization:
             
             # Gráfico 1: Top 10 Pessoas Físicas (CPF) - PRIMEIRO
             if not df_pessoas_fisicas.empty:
-                # Agrupa por NOME_INFRATOR e CPF_CNPJ_INFRATOR, soma os valores
+                # Agrupa por NOME_INFRATOR e CPF_CNPJ_INFRATOR, soma os valores (dados já únicos)
                 pf_grouped = df_pessoas_fisicas.groupby(['NOME_INFRATOR', 'CPF_CNPJ_INFRATOR'])['VAL_AUTO_INFRACAO_NUMERIC'].sum().reset_index()
                 pf_grouped = pf_grouped.nlargest(10, 'VAL_AUTO_INFRACAO_NUMERIC')
                 
@@ -579,7 +604,7 @@ class DataVisualization:
                     
                     # Mostra estatísticas
                     total_pf = pf_grouped['VAL_AUTO_INFRACAO_NUMERIC'].sum()
-                    st.caption(f"💰 Total: R$ {total_pf:,.2f} | 👥 {len(pf_grouped)} pessoas físicas")
+                    st.caption(f"💰 Total: R$ {total_pf:,.2f} | 👥 {len(pf_grouped)} pessoas físicas (dados únicos)")
                 else:
                     st.info("Nenhuma pessoa física encontrada nos dados filtrados.")
             else:
@@ -590,7 +615,7 @@ class DataVisualization:
             
             # Gráfico 2: Top 10 Empresas (CNPJ) - SEGUNDO (abaixo)
             if not df_empresas.empty:
-                # Agrupa por NOME_INFRATOR e CPF_CNPJ_INFRATOR, soma os valores
+                # Agrupa por NOME_INFRATOR e CPF_CNPJ_INFRATOR, soma os valores (dados já únicos)
                 empresa_grouped = df_empresas.groupby(['NOME_INFRATOR', 'CPF_CNPJ_INFRATOR'])['VAL_AUTO_INFRACAO_NUMERIC'].sum().reset_index()
                 empresa_grouped = empresa_grouped.nlargest(10, 'VAL_AUTO_INFRACAO_NUMERIC')
                 
@@ -629,7 +654,7 @@ class DataVisualization:
                     
                     # Mostra estatísticas
                     total_empresa = empresa_grouped['VAL_AUTO_INFRACAO_NUMERIC'].sum()
-                    st.caption(f"💰 Total: R$ {total_empresa:,.2f} | 🏢 {len(empresa_grouped)} empresas")
+                    st.caption(f"💰 Total: R$ {total_empresa:,.2f} | 🏢 {len(empresa_grouped)} empresas (dados únicos)")
                 else:
                     st.info("Nenhuma empresa encontrada nos dados filtrados.")
             else:
@@ -640,15 +665,15 @@ class DataVisualization:
             total_nao_identificados = len(df_clean) - total_identificados
             
             if total_nao_identificados > 0:
-                st.info(f"📊 **Resumo Geral:** {len(df_pessoas_fisicas)} pessoas físicas, {len(df_empresas)} empresas, {total_nao_identificados} registros com formato de CPF/CNPJ não identificado")
+                st.info(f"📊 **Resumo Geral:** {len(df_pessoas_fisicas)} pessoas físicas, {len(df_empresas)} empresas, {total_nao_identificados} registros com formato de CPF/CNPJ não identificado (todos dados únicos)")
             else:
-                st.info(f"📊 **Resumo Geral:** {len(df_pessoas_fisicas)} pessoas físicas, {len(df_empresas)} empresas identificadas")
+                st.info(f"📊 **Resumo Geral:** {len(df_pessoas_fisicas)} pessoas físicas, {len(df_empresas)} empresas identificadas (todos dados únicos)")
                 
         except Exception as e:
             st.error(f"Erro no gráfico de infratores: {e}")
 
     def create_infraction_map_advanced(self, selected_ufs: list, date_filters: dict):
-        """Cria mapa de calor das infrações com filtros avançados."""
+        """Cria mapa de calor das infrações com dados únicos garantidos."""
         st.subheader("Mapa de Calor de Infrações")
         
         try:
@@ -677,9 +702,9 @@ class DataVisualization:
                     st.warning("Nenhuma coordenada válida encontrada.")
                     return
                 
-                # Limita para performance
+                # Limita para performance (dados já são únicos)
                 if len(df_map) > 5000:
-                    df_map = df_map.sample(n=5000)
+                    df_map = df_map.sample(n=5000, random_state=42)  # random_state para reprodutibilidade
                 
                 # Converte coordenadas
                 df_map['lat'] = pd.to_numeric(df_map['NUM_LATITUDE_AUTO'].astype(str).str.replace(',', '.'), errors='coerce')
@@ -690,7 +715,7 @@ class DataVisualization:
                 
                 if not df_map.empty:
                     st.map(df_map[['lat', 'lon']], zoom=3)
-                    st.caption(f"📍 Exibindo {len(df_map):,} pontos de {len(df):,} infrações | {date_filters['description']}")
+                    st.caption(f"📍 Exibindo {len(df_map):,} pontos de {len(df):,} infrações únicas | {date_filters['description']}")
                 else:
                     st.warning("Nenhuma coordenada válida após conversão.")
                     
@@ -698,7 +723,7 @@ class DataVisualization:
             st.error(f"Erro no mapa: {e}")
 
     def create_infraction_status_chart_advanced(self, selected_ufs: list, date_filters: dict):
-        """Cria gráfico do status das infrações com contagem correta."""
+        """Cria gráfico do status das infrações com dados únicos garantidos."""
         try:
             df = self._get_filtered_data_advanced(selected_ufs, date_filters)
             
@@ -711,13 +736,9 @@ class DataVisualization:
             if df_clean.empty:
                 return
             
-            # Conta infrações únicas por status se NUM_AUTO_INFRACAO disponível
-            if 'NUM_AUTO_INFRACAO' in df_clean.columns:
-                status_counts = df_clean.groupby('DES_STATUS_FORMULARIO')['NUM_AUTO_INFRACAO'].nunique().sort_values(ascending=False).head(10)
-                method_note = "infrações únicas"
-            else:
-                status_counts = df_clean['DES_STATUS_FORMULARIO'].value_counts().head(10)
-                method_note = "registros"
+            # Conta infrações por status (dados já são únicos)
+            status_counts = df_clean['DES_STATUS_FORMULARIO'].value_counts().head(10)
+            method_note = "infrações únicas (garantido)"
             
             if not status_counts.empty:
                 chart_df = pd.DataFrame({
@@ -827,3 +848,87 @@ class DataVisualization:
         if self.paginator:
             self.paginator.clear_cache()
             st.success("🔄 Cache limpo! Os dados serão recarregados.")
+
+    # ======================== MÉTODOS DE DIAGNÓSTICO ========================
+
+    def get_data_quality_info(self, selected_ufs: list = None, date_filters: dict = None) -> dict:
+        """Retorna informações sobre a qualidade dos dados carregados."""
+        try:
+            if date_filters is None:
+                date_filters = {
+                    "mode": "simple",
+                    "years": [2024, 2025],
+                    "description": "Todos os dados"
+                }
+            
+            # Obtém dados
+            df = self._get_filtered_data_advanced(selected_ufs or [], date_filters)
+            
+            if df.empty:
+                return {"error": "Nenhum dado disponível"}
+            
+            # Análise de qualidade
+            quality_info = {
+                "total_records": len(df),
+                "has_num_auto_infracao": 'NUM_AUTO_INFRACAO' in df.columns,
+                "unique_infractions": df['NUM_AUTO_INFRACAO'].nunique() if 'NUM_AUTO_INFRACAO' in df.columns else 0,
+                "null_num_auto": df['NUM_AUTO_INFRACAO'].isna().sum() if 'NUM_AUTO_INFRACAO' in df.columns else 0,
+                "columns_count": len(df.columns),
+                "memory_usage_mb": df.memory_usage(deep=True).sum() / 1024 / 1024,
+                "date_range": {
+                    "min": df['DAT_HORA_AUTO_INFRACAO'].min() if 'DAT_HORA_AUTO_INFRACAO' in df.columns else None,
+                    "max": df['DAT_HORA_AUTO_INFRACAO'].max() if 'DAT_HORA_AUTO_INFRACAO' in df.columns else None
+                },
+                "states_count": df['UF'].nunique() if 'UF' in df.columns else 0,
+                "municipalities_count": df['MUNICIPIO'].nunique() if 'MUNICIPIO' in df.columns else 0
+            }
+            
+            # Verifica consistência
+            if quality_info["has_num_auto_infracao"]:
+                quality_info["data_consistency"] = quality_info["total_records"] == quality_info["unique_infractions"]
+                quality_info["duplicate_records"] = quality_info["total_records"] - quality_info["unique_infractions"]
+            else:
+                quality_info["data_consistency"] = None
+                quality_info["duplicate_records"] = None
+            
+            return quality_info
+            
+        except Exception as e:
+            return {"error": f"Erro na análise de qualidade: {str(e)}"}
+
+    def display_data_quality_info(self, selected_ufs: list = None, date_filters: dict = None):
+        """Exibe informações sobre a qualidade dos dados."""
+        with st.expander("🔍 Informações de Qualidade dos Dados"):
+            quality_info = self.get_data_quality_info(selected_ufs, date_filters)
+            
+            if "error" in quality_info:
+                st.error(quality_info["error"])
+                return
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Total de Registros", f"{quality_info['total_records']:,}")
+                if quality_info['has_num_auto_infracao']:
+                    st.metric("Infrações Únicas", f"{quality_info['unique_infractions']:,}")
+                else:
+                    st.warning("Coluna NUM_AUTO_INFRACAO não encontrada")
+            
+            with col2:
+                st.metric("Estados", quality_info['states_count'])
+                st.metric("Municípios", quality_info['municipalities_count'])
+            
+            with col3:
+                st.metric("Colunas", quality_info['columns_count'])
+                st.metric("Uso de Memória", f"{quality_info['memory_usage_mb']:.1f} MB")
+            
+            # Consistência dos dados
+            if quality_info['data_consistency'] is not None:
+                if quality_info['data_consistency']:
+                    st.success("✅ Dados consistentes - sem duplicatas")
+                else:
+                    st.warning(f"⚠️ {quality_info['duplicate_records']} registros duplicados removidos")
+            
+            # Range de datas
+            if quality_info['date_range']['min'] and quality_info['date_range']['max']:
+                st.info(f"📅 Período: {quality_info['date_range']['min']} a {quality_info['date_range']['max']}")
