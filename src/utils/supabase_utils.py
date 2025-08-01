@@ -1,3 +1,5 @@
+# Diagnóstico Profundo e Correção Definitiva - supabase_utils.py
+
 import pandas as pd
 import streamlit as st
 from typing import List, Dict, Any, Optional
@@ -7,218 +9,176 @@ import random
 import uuid
 
 class SupabasePaginator:
-    """Classe para buscar todos os dados do Supabase com paginação e garantia de unicidade - CORRIGIDA."""
+    """Classe CORRIGIDA para buscar todos os dados do Supabase com análise profunda de duplicatas."""
     
     def __init__(self, supabase_client):
         self.supabase = supabase_client
         self.page_size = 1000  # Tamanho da página (limite do Supabase)
-        self.max_pages = 25    # AUMENTADO: permite até 25k registros (suficiente para 21k)
+        self.max_pages = 35    # AUMENTADO: permite até 35k registros para garantir
     
     def _get_session_key(self, table_name: str = 'ibama_infracao', filters: str = "") -> str:
         """Gera chave única POR SESSÃO para cache isolado."""
-        # Usa session_id do Streamlit para isolamento real entre usuários
         if 'session_uuid' not in st.session_state:
             st.session_state.session_uuid = str(uuid.uuid4())[:8]
         
         session_id = st.session_state.session_uuid
-        
-        # Hash dos filtros para cache específico
         filter_hash = hashlib.md5(f"{table_name}_{filters}_{session_id}".encode()).hexdigest()[:8]
         return f"data_{session_id}_{filter_hash}"
     
-    def get_all_records(self, table_name: str = 'ibama_infracao', cache_key: str = None) -> pd.DataFrame:
+    def deep_analysis_duplicates(self, table_name: str = 'ibama_infracao') -> Dict[str, Any]:
         """
-        Busca TODOS os registros únicos da tabela usando paginação.
-        CORRIGIDO: Cache por sessão e paginação completa.
-        """
-        # Se não forneceu cache_key, gera um único para esta sessão
-        if cache_key is None:
-            cache_key = self._get_session_key(table_name)
-        
-        # CRÍTICO: Verifica se já está em cache desta sessão
-        cache_storage_key = f"paginated_data_{cache_key}"
-        if cache_storage_key in st.session_state:
-            print(f"✅ Retornando dados do cache da sessão: {cache_storage_key}")
-            return st.session_state[cache_storage_key]
-        
-        print(f"🔄 Iniciando busca paginada da tabela {table_name} (sessão: {cache_key})")
-        
-        all_data = []
-        page = 0
-        seen_infractions = set()  # Para garantir unicidade durante a busca
-        
-        while True:
-            start = page * self.page_size
-            end = start + self.page_size - 1
-            
-            print(f"   📄 Página {page + 1}: registros {start} a {end}")
-            
-            try:
-                # Busca uma página de dados
-                result = self.supabase.table(table_name).select('*').range(start, end).execute()
-                
-                if not result.data or len(result.data) == 0:
-                    print(f"   ✅ Fim da paginação na página {page + 1}")
-                    break
-                
-                # CRÍTICO: Filtra registros únicos por NUM_AUTO_INFRACAO durante a busca
-                unique_records = []
-                for record in result.data:
-                    num_auto = record.get('NUM_AUTO_INFRACAO')
-                    if num_auto and num_auto not in seen_infractions:
-                        seen_infractions.add(num_auto)
-                        unique_records.append(record)
-                
-                all_data.extend(unique_records)
-                print(f"   📊 Carregados {len(unique_records)} registros únicos desta página (total acumulado: {len(all_data):,})")
-                
-                # Se retornou menos que o page_size, chegamos ao fim
-                if len(result.data) < self.page_size:
-                    print(f"   ✅ Última página alcançada (dados finalizados)")
-                    break
-                
-                page += 1
-                
-                # CORRIGIDO: Limite de segurança aumentado para capturar todos os dados
-                if page >= self.max_pages:
-                    print(f"   ⚠️ Limite de segurança atingido ({self.max_pages} páginas)")
-                    print(f"   💡 Total únicos coletados até aqui: {len(seen_infractions):,}")
-                    break
-                
-            except Exception as e:
-                print(f"   ❌ Erro na página {page + 1}: {e}")
-                break
-        
-        print(f"🎉 Paginação concluída: {len(all_data):,} registros únicos carregados")
-        print(f"🔍 Infrações únicas encontradas: {len(seen_infractions):,}")
-        
-        df = pd.DataFrame(all_data)
-        
-        # VALIDAÇÃO FINAL: Garante que não há duplicatas no DataFrame
-        if not df.empty and 'NUM_AUTO_INFRACAO' in df.columns:
-            original_count = len(df)
-            df_unique = df.drop_duplicates(subset=['NUM_AUTO_INFRACAO'], keep='first')
-            final_count = len(df_unique)
-            
-            if original_count != final_count:
-                print(f"🚨 AVISO: {original_count - final_count} duplicatas removidas na validação final")
-                df = df_unique
-        
-        # CRÍTICO: Armazena no cache da sessão (não global)
-        st.session_state[cache_storage_key] = df
-        print(f"💾 Dados armazenados no cache da sessão: {cache_storage_key}")
-        
-        return df
-    
-    def get_filtered_data(self, selected_ufs: List[str] = None, year_range: tuple = None) -> pd.DataFrame:
-        """
-        Busca dados filtrados com garantia de unicidade.
-        CORRIGIDO: Cache por sessão específica.
-        """
-        # Gera chave única para esta sessão e filtros
-        filter_str = f"ufs_{selected_ufs}_years_{year_range}"
-        cache_key = self._get_session_key('ibama_infracao', filter_str)
-        
-        print(f"🔍 Buscando dados filtrados - Cache Key: {cache_key}")
-        
-        # Busca todos os dados únicos desta sessão
-        df = self.get_all_records('ibama_infracao', cache_key)
-        
-        if df.empty:
-            return df
-        
-        original_count = len(df)
-        print(f"📊 Dataset original: {original_count:,} registros únicos")
-        
-        # Aplica filtros
-        if selected_ufs and 'UF' in df.columns:
-            df = df[df['UF'].isin(selected_ufs)]
-            print(f"   🗺️ Após filtro UF: {len(df):,} registros")
-        
-        if year_range and 'DAT_HORA_AUTO_INFRACAO' in df.columns:
-            try:
-                df['DAT_HORA_AUTO_INFRACAO'] = pd.to_datetime(df['DAT_HORA_AUTO_INFRACAO'], errors='coerce')
-                df = df[
-                    (df['DAT_HORA_AUTO_INFRACAO'].dt.year >= year_range[0]) &
-                    (df['DAT_HORA_AUTO_INFRACAO'].dt.year <= year_range[1])
-                ]
-                print(f"   📅 Após filtro ano {year_range}: {len(df):,} registros")
-            except Exception as e:
-                print(f"   ⚠️ Erro no filtro de data: {e}")
-        
-        print(f"✅ Dados filtrados finais: {len(df):,} registros únicos")
-        return df
-    
-    def get_real_count(self, table_name: str = 'ibama_infracao') -> Dict[str, Any]:
-        """
-        Obtém contagens reais diretamente do banco.
-        CORRIGIDO: Usa paginação completa para contar infrações únicas corretamente.
+        NOVA FUNÇÃO: Análise profunda de duplicatas no banco.
+        Identifica exatamente onde estão as duplicatas e por quê.
         """
         try:
-            print("🔍 Iniciando contagem real dos dados...")
+            print("🔍 ANÁLISE PROFUNDA: Investigando duplicatas no banco...")
             
-            # 1. Count total de registros usando API do Supabase
-            result_total = self.supabase.table(table_name).select('*', count='exact').limit(1).execute()
-            total_records = getattr(result_total, 'count', 0)
-            print(f"📊 Total de registros no banco: {total_records:,}")
+            analysis_result = {
+                'total_records': 0,
+                'unique_num_auto': 0,
+                'duplicated_num_auto': 0,
+                'most_duplicated': [],
+                'null_num_auto': 0,
+                'empty_num_auto': 0,
+                'problematic_records': [],
+                'sample_duplicates': []
+            }
             
-            # 2. Para contar infrações únicas, precisa buscar todos os NUM_AUTO_INFRACAO
-            print("🔄 Buscando todos os NUM_AUTO_INFRACAO para contagem única...")
-            
-            all_num_auto = set()
+            all_num_auto = []
+            all_records = []
             page = 0
+            
+            print("📊 Coletando TODOS os NUM_AUTO_INFRACAO para análise...")
             
             while True:
                 start = page * self.page_size
                 end = start + self.page_size - 1
                 
+                print(f"   📄 Analisando página {page + 1}: registros {start} a {end}")
+                
                 try:
-                    # Busca apenas a coluna NUM_AUTO_INFRACAO para economia de recursos
-                    result = self.supabase.table(table_name).select('NUM_AUTO_INFRACAO').range(start, end).execute()
+                    # Busca apenas campos críticos para análise
+                    result = self.supabase.table(table_name).select(
+                        'NUM_AUTO_INFRACAO, DAT_HORA_AUTO_INFRACAO, UF, MUNICIPIO'
+                    ).range(start, end).execute()
                     
                     if not result.data or len(result.data) == 0:
                         break
                     
-                    # Adiciona ao set (automaticamente remove duplicatas)
                     for record in result.data:
+                        all_records.append(record)
                         num_auto = record.get('NUM_AUTO_INFRACAO')
-                        if num_auto:
-                            all_num_auto.add(num_auto)
+                        all_num_auto.append(num_auto)
                     
-                    print(f"   📄 Página {page + 1}: {len(result.data)} registros, {len(all_num_auto)} únicos totais")
+                    print(f"      ✅ Coletados {len(result.data)} registros (total: {len(all_records)})")
                     
-                    # Se retornou menos que page_size, acabou
                     if len(result.data) < self.page_size:
                         break
                     
                     page += 1
                     
-                    # CORRIGIDO: Limite de segurança aumentado
                     if page >= self.max_pages:
-                        print(f"   ⚠️ Limite de segurança atingido ({self.max_pages} páginas)")
-                        print(f"   📊 Total únicos coletados: {len(all_num_auto):,}")
+                        print(f"   ⚠️ Limite de páginas atingido: {self.max_pages}")
                         break
                         
                 except Exception as e:
                     print(f"   ❌ Erro na página {page + 1}: {e}")
                     break
             
-            unique_count = len(all_num_auto)
+            print(f"🎯 ANÁLISE COMPLETA: {len(all_records)} registros coletados")
             
-            print(f"✅ Contagem concluída:")
-            print(f"   📊 Total de registros: {total_records:,}")
-            print(f"   🔢 Infrações únicas: {unique_count:,}")
-            print(f"   📉 Duplicatas: {total_records - unique_count:,}")
+            # Análise dos dados coletados
+            df_analysis = pd.DataFrame(all_records)
+            analysis_result['total_records'] = len(df_analysis)
             
-            return {
-                'total_records': total_records,
-                'unique_infractions': unique_count,
-                'duplicates': total_records - unique_count,
-                'timestamp': pd.Timestamp.now()
-            }
+            # Análise de NUM_AUTO_INFRACAO
+            if 'NUM_AUTO_INFRACAO' in df_analysis.columns:
+                # Conta nulos e vazios
+                analysis_result['null_num_auto'] = df_analysis['NUM_AUTO_INFRACAO'].isna().sum()
+                analysis_result['empty_num_auto'] = (df_analysis['NUM_AUTO_INFRACAO'] == '').sum()
+                
+                # Remove nulos e vazios para análise
+                df_valid = df_analysis[
+                    df_analysis['NUM_AUTO_INFRACAO'].notna() & 
+                    (df_analysis['NUM_AUTO_INFRACAO'] != '')
+                ].copy()
+                
+                if not df_valid.empty:
+                    # Conta únicos
+                    analysis_result['unique_num_auto'] = df_valid['NUM_AUTO_INFRACAO'].nunique()
+                    
+                    # Identifica duplicatas
+                    duplicates = df_valid['NUM_AUTO_INFRACAO'].value_counts()
+                    duplicated_nums = duplicates[duplicates > 1]
+                    analysis_result['duplicated_num_auto'] = len(duplicated_nums)
+                    
+                    # Top 10 mais duplicados
+                    if not duplicated_nums.empty:
+                        analysis_result['most_duplicated'] = duplicated_nums.head(10).to_dict()
+                        
+                        # Amostras de registros duplicados
+                        for num_auto, count in duplicated_nums.head(5).items():
+                            sample_records = df_valid[df_valid['NUM_AUTO_INFRACAO'] == num_auto]
+                            analysis_result['sample_duplicates'].append({
+                                'num_auto': num_auto,
+                                'count': count,
+                                'sample_data': sample_records.head(3).to_dict('records')
+                            })
+                    
+                    print(f"📈 RESULTADOS DA ANÁLISE:")
+                    print(f"   📊 Total de registros: {analysis_result['total_records']:,}")
+                    print(f"   🔢 NUM_AUTO_INFRACAO únicos: {analysis_result['unique_num_auto']:,}")
+                    print(f"   ❌ Nulos: {analysis_result['null_num_auto']:,}")
+                    print(f"   ❌ Vazios: {analysis_result['empty_num_auto']:,}")
+                    print(f"   🔄 NUM_AUTO_INFRACAO duplicados: {analysis_result['duplicated_num_auto']:,}")
+                    
+                    if analysis_result['most_duplicated']:
+                        print(f"   🔴 Exemplo de duplicata mais comum:")
+                        most_common = list(analysis_result['most_duplicated'].items())[0]
+                        print(f"      NUM_AUTO_INFRACAO: {most_common[0]} aparece {most_common[1]} vezes")
+            
+            return analysis_result
             
         except Exception as e:
-            print(f"❌ Erro ao obter contagens reais: {e}")
+            print(f"❌ Erro na análise profunda: {e}")
+            return {"error": f"Erro na análise: {str(e)}"}
+    
+    def get_real_count_fixed(self, table_name: str = 'ibama_infracao') -> Dict[str, Any]:
+        """
+        VERSÃO CORRIGIDA: Obtém contagens reais com análise profunda.
+        """
+        try:
+            print("🔍 CONTAGEM REAL CORRIGIDA: Iniciando análise completa...")
+            
+            # Executa análise profunda
+            deep_analysis = self.deep_analysis_duplicates(table_name)
+            
+            if 'error' in deep_analysis:
+                return deep_analysis
+            
+            # Monta resultado final
+            result = {
+                'total_records': deep_analysis['total_records'],
+                'unique_infractions': deep_analysis['unique_num_auto'],
+                'duplicates': deep_analysis['total_records'] - deep_analysis['unique_num_auto'],
+                'null_records': deep_analysis['null_num_auto'],
+                'empty_records': deep_analysis['empty_num_auto'],
+                'duplicated_infractions': deep_analysis['duplicated_num_auto'],
+                'most_duplicated_examples': deep_analysis['most_duplicated'],
+                'timestamp': pd.Timestamp.now(),
+                'analysis_complete': True
+            }
+            
+            print(f"✅ CONTAGEM REAL FINALIZADA:")
+            print(f"   📊 Total: {result['total_records']:,}")
+            print(f"   🔢 Únicos: {result['unique_infractions']:,}")
+            print(f"   📉 Duplicatas: {result['duplicates']:,}")
+            print(f"   ❌ Nulos/Vazios: {result['null_records']:,}/{result['empty_records']:,}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"❌ Erro na contagem real corrigida: {e}")
             return {
                 'total_records': 0,
                 'unique_infractions': 0,
@@ -227,10 +187,157 @@ class SupabasePaginator:
                 'error': str(e)
             }
     
+    def get_all_records_fixed(self, table_name: str = 'ibama_infracao', cache_key: str = None) -> pd.DataFrame:
+        """
+        VERSÃO CORRIGIDA: Busca TODOS os registros únicos com verificação rigorosa.
+        """
+        if cache_key is None:
+            cache_key = self._get_session_key(table_name)
+        
+        cache_storage_key = f"paginated_data_{cache_key}"
+        if cache_storage_key in st.session_state:
+            print(f"✅ Retornando dados do cache da sessão: {cache_storage_key}")
+            return st.session_state[cache_storage_key]
+        
+        print(f"🔄 BUSCA CORRIGIDA: Iniciando paginação completa com verificação rigorosa...")
+        
+        all_data = []
+        seen_infractions = set()
+        page = 0
+        
+        while True:
+            start = page * self.page_size
+            end = start + self.page_size - 1
+            
+            print(f"   📄 Página {page + 1}: registros {start} a {end}")
+            
+            try:
+                result = self.supabase.table(table_name).select('*').range(start, end).execute()
+                
+                if not result.data or len(result.data) == 0:
+                    print(f"   ✅ Fim da paginação na página {page + 1}")
+                    break
+                
+                # VERIFICAÇÃO RIGOROSA: Filtra registros únicos
+                unique_records = []
+                duplicates_found = 0
+                
+                for record in result.data:
+                    num_auto = record.get('NUM_AUTO_INFRACAO')
+                    
+                    # Só aceita registros com NUM_AUTO_INFRACAO válido
+                    if num_auto and str(num_auto).strip() != '':
+                        if num_auto not in seen_infractions:
+                            seen_infractions.add(num_auto)
+                            unique_records.append(record)
+                        else:
+                            duplicates_found += 1
+                
+                all_data.extend(unique_records)
+                
+                if duplicates_found > 0:
+                    print(f"      ⚠️ {duplicates_found} duplicatas encontradas e ignoradas nesta página")
+                
+                print(f"   📊 Únicos desta página: {len(unique_records)} (acumulado: {len(all_data):,})")
+                
+                if len(result.data) < self.page_size:
+                    print(f"   ✅ Última página alcançada")
+                    break
+                
+                page += 1
+                
+                if page >= self.max_pages:
+                    print(f"   ⚠️ Limite máximo de páginas atingido: {self.max_pages}")
+                    break
+                
+            except Exception as e:
+                print(f"   ❌ Erro na página {page + 1}: {e}")
+                break
+        
+        print(f"🎉 PAGINAÇÃO COMPLETA:")
+        print(f"   📊 Total de registros únicos coletados: {len(all_data):,}")
+        print(f"   🔢 NUM_AUTO_INFRACAO únicos: {len(seen_infractions):,}")
+        
+        df = pd.DataFrame(all_data)
+        
+        # VALIDAÇÃO FINAL RIGOROSA
+        if not df.empty and 'NUM_AUTO_INFRACAO' in df.columns:
+            original_count = len(df)
+            df_final = df.drop_duplicates(subset=['NUM_AUTO_INFRACAO'], keep='first')
+            final_count = len(df_final)
+            
+            if original_count != final_count:
+                print(f"🚨 AVISO CRÍTICO: {original_count - final_count} duplicatas extras removidas na validação final")
+                df = df_final
+            else:
+                print(f"✅ VALIDAÇÃO FINAL: Confirmados {final_count:,} registros únicos")
+        
+        # Armazena no cache da sessão
+        st.session_state[cache_storage_key] = df
+        print(f"💾 Dados armazenados no cache da sessão: {cache_storage_key}")
+        
+        return df
+    
+    def diagnostic_database_structure(self) -> Dict[str, Any]:
+        """
+        NOVA FUNÇÃO: Diagnostica a estrutura do banco para identificar problemas.
+        """
+        try:
+            print("🔍 DIAGNÓSTICO DE ESTRUTURA: Analisando banco de dados...")
+            
+            # Busca uma amostra para análise de estrutura
+            result = self.supabase.table('ibama_infracao').select('*').limit(100).execute()
+            
+            if not result.data:
+                return {"error": "Nenhum dado encontrado"}
+            
+            df_sample = pd.DataFrame(result.data)
+            
+            structure_info = {
+                'total_columns': len(df_sample.columns),
+                'columns_list': list(df_sample.columns),
+                'num_auto_exists': 'NUM_AUTO_INFRACAO' in df_sample.columns,
+                'sample_size': len(df_sample),
+                'data_types': df_sample.dtypes.to_dict(),
+                'null_counts': df_sample.isnull().sum().to_dict(),
+                'sample_num_auto': []
+            }
+            
+            # Analisa NUM_AUTO_INFRACAO especificamente
+            if structure_info['num_auto_exists']:
+                sample_nums = df_sample['NUM_AUTO_INFRACAO'].dropna().head(10).tolist()
+                structure_info['sample_num_auto'] = sample_nums
+                
+                # Verifica formato dos NUM_AUTO_INFRACAO
+                unique_formats = set()
+                for num in sample_nums:
+                    if num:
+                        unique_formats.add(type(num).__name__)
+                structure_info['num_auto_formats'] = list(unique_formats)
+            
+            print(f"📋 ESTRUTURA DO BANCO:")
+            print(f"   📊 Total de colunas: {structure_info['total_columns']}")
+            print(f"   🔢 NUM_AUTO_INFRACAO existe: {structure_info['num_auto_exists']}")
+            print(f"   📝 Formatos NUM_AUTO_INFRACAO: {structure_info.get('num_auto_formats', [])}")
+            
+            return structure_info
+            
+        except Exception as e:
+            print(f"❌ Erro no diagnóstico de estrutura: {e}")
+            return {"error": f"Erro no diagnóstico: {str(e)}"}
+    
+    # Métodos existentes mantidos para compatibilidade
+    def get_real_count(self, table_name: str = 'ibama_infracao') -> Dict[str, Any]:
+        """Método original mantido - chama a versão corrigida."""
+        return self.get_real_count_fixed(table_name)
+    
+    def get_all_records(self, table_name: str = 'ibama_infracao', cache_key: str = None) -> pd.DataFrame:
+        """Método original mantido - chama a versão corrigida."""
+        return self.get_all_records_fixed(table_name, cache_key)
+    
     def clear_cache(self):
         """Limpa o cache específico desta sessão."""
         try:
-            # Limpa apenas dados desta sessão
             session_uuid = st.session_state.get('session_uuid', '')
             
             keys_to_remove = []
@@ -241,7 +348,6 @@ class SupabasePaginator:
             for key in keys_to_remove:
                 del st.session_state[key]
             
-            # Gera novo UUID de sessão para forçar novo cache
             st.session_state.session_uuid = str(uuid.uuid4())[:8]
             
             print(f"🧹 Cache da sessão limpo ({len(keys_to_remove)} chaves removidas)")
@@ -249,84 +355,3 @@ class SupabasePaginator:
         except Exception as e:
             print(f"❌ Erro ao limpar cache: {e}")
             return False
-    
-    def get_sample_data(self, limit: int = 1000) -> pd.DataFrame:
-        """
-        Busca uma amostra dos dados para testes rápidos.
-        Útil para desenvolvimento e debug.
-        """
-        try:
-            print(f"🔍 Buscando amostra de {limit} registros...")
-            
-            result = self.supabase.table('ibama_infracao').select('*').limit(limit).execute()
-            
-            if result.data:
-                df = pd.DataFrame(result.data)
-                
-                # Remove duplicatas da amostra
-                if 'NUM_AUTO_INFRACAO' in df.columns:
-                    original_count = len(df)
-                    df = df.drop_duplicates(subset=['NUM_AUTO_INFRACAO'], keep='first')
-                    unique_count = len(df)
-                    
-                    print(f"📊 Amostra: {original_count} registros → {unique_count} únicos")
-                
-                return df
-            else:
-                return pd.DataFrame()
-                
-        except Exception as e:
-            print(f"❌ Erro ao buscar amostra: {e}")
-            return pd.DataFrame()
-    
-    def validate_data_integrity(self) -> Dict[str, Any]:
-        """
-        Valida a integridade dos dados carregados.
-        Útil para diagnóstico e debug.
-        """
-        try:
-            print("🔍 Validando integridade dos dados...")
-            
-            # Busca amostra para análise
-            df_sample = self.get_sample_data(5000)
-            
-            if df_sample.empty:
-                return {"error": "Nenhum dado disponível para validação"}
-            
-            # Análises de integridade
-            validation_info = {
-                "sample_size": len(df_sample),
-                "columns_count": len(df_sample.columns),
-                "has_num_auto_infracao": 'NUM_AUTO_INFRACAO' in df_sample.columns,
-                "null_num_auto_count": 0,
-                "empty_num_auto_count": 0,
-                "unique_num_auto_count": 0,
-                "duplicate_detection": False
-            }
-            
-            if validation_info["has_num_auto_infracao"]:
-                # Analisa coluna NUM_AUTO_INFRACAO
-                validation_info["null_num_auto_count"] = df_sample['NUM_AUTO_INFRACAO'].isna().sum()
-                validation_info["empty_num_auto_count"] = (df_sample['NUM_AUTO_INFRACAO'] == '').sum()
-                validation_info["unique_num_auto_count"] = df_sample['NUM_AUTO_INFRACAO'].nunique()
-                
-                # Detecta duplicatas
-                total_valid = len(df_sample) - validation_info["null_num_auto_count"] - validation_info["empty_num_auto_count"]
-                validation_info["duplicate_detection"] = validation_info["unique_num_auto_count"] < total_valid
-            
-            # Análise de datas
-            if 'DAT_HORA_AUTO_INFRACAO' in df_sample.columns:
-                try:
-                    df_sample['DATE_PARSED'] = pd.to_datetime(df_sample['DAT_HORA_AUTO_INFRACAO'], errors='coerce')
-                    validation_info["valid_dates"] = df_sample['DATE_PARSED'].notna().sum()
-                    validation_info["date_range"] = {
-                        "min": df_sample['DATE_PARSED'].min(),
-                        "max": df_sample['DATE_PARSED'].max()
-                    }
-                except:
-                    validation_info["date_parsing_error"] = True
-            
-            return validation_info
-            
-        except Exception as e:
-            return {"error": f"Erro na validação: {str(e)}"}
