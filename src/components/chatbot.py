@@ -114,7 +114,7 @@ class ChatbotFixed:
         else:
             return f"R$ {value:.2f}".replace('.', ',')
     
-    def _find_similar_names(self, search_name: str, df: pd.DataFrame, min_score: int = 80) -> list:
+    def _find_similar_names(self, search_name: str, df: pd.DataFrame, min_score: int = 95) -> list:
         """Encontra nomes similares usando fuzzy matching."""
         try:
             # Importa fuzzywuzzy apenas quando necessário
