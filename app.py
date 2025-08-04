@@ -19,7 +19,7 @@ def load_components():
         from src.utils.database import Database
         from src.utils.llm_integration import LLMIntegration
         from src.components.visualization import DataVisualization
-        from src.components.chatbot import Chatbot
+        from src.components.chatbot import ChatbotFixed as Chatbot
         return Database, LLMIntegration, DataVisualization, Chatbot
     except ImportError as e:
         st.error(f"Erro ao carregar componentes: {e}")
