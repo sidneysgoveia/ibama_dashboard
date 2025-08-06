@@ -53,4 +53,106 @@ jobs:
           from supabase import create_client
           
           try:
-              supabase = create_client('${{ secrets.SUPABASE_URL }}', '$
+              supabase = create_client('${{ secrets.SUPABASE_URL }}', '${{ secrets.SUPABASE_KEY }}')
+              result = supabase.table('ibama_infracao').select('*').limit(1).execute()
+              
+              if result.data:
+                  columns = list(result.data[0].keys())
+                  print(f'📊 Colunas no Supabase ({len(columns)}):')
+                  for i, col in enumerate(columns, 1):
+                      print(f'{i:2d}. {col}')
+              else:
+                  print('⚠️ Tabela vazia - criando estrutura...')
+          except Exception as e:
+              print(f'❌ Erro ao verificar schema: {e}')
+          "
+        env:
+          PYTHONPATH: .
+          
+      - name: 🚀 Executar upload corrigido
+        run: python upload_to_supabase_ultra_robust.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          IBAMA_ZIP_URL: 'https://dadosabertos.ibama.gov.br/dados/SIFISC/auto_infracao/auto_infracao/auto_infracao_csv.zip'
+          DEBUG_MODE: ${{ inputs.debug_mode }}
+          
+      - name: 📊 Verificar dados após upload
+        if: success()
+        run: |
+          python -c "
+          from supabase import create_client
+          
+          try:
+              supabase = create_client('${{ secrets.SUPABASE_URL }}', '${{ secrets.SUPABASE_KEY }}')
+              
+              # Conta total
+              result = supabase.table('ibama_infracao').select('*', count='exact').limit(1).execute()
+              total = getattr(result, 'count', 0)
+              
+              # Conta únicos por NUM_AUTO_INFRACAO
+              if total > 0:
+                  print(f'✅ Upload finalizado:')
+                  print(f'   📊 Total de registros: {total:,}')
+                  
+                  # Verifica amostra
+                  sample = supabase.table('ibama_infracao').select('NUM_AUTO_INFRACAO, UF, TIPO_INFRACAO').limit(5).execute()
+                  if sample.data:
+                      print(f'   🔍 Amostra dos dados:')
+                      for i, record in enumerate(sample.data, 1):
+                          print(f'   {i}. {record.get(\"NUM_AUTO_INFRACAO\", \"N/A\")} - {record.get(\"UF\", \"N/A\")} - {record.get(\"TIPO_INFRACAO\", \"N/A\")}')
+              else:
+                  print('❌ Nenhum registro encontrado após upload')
+                  
+          except Exception as e:
+              print(f'❌ Erro na verificação: {e}')
+          "
+        env:
+          PYTHONPATH: .
+          
+      - name: 📋 Upload de logs de execução
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ibama-upload-logs-${{ github.run_number }}
+          path: |
+            *.log
+            **/*.log
+            debug_*.txt
+          retention-days: 14
+          
+      - name: ✅ Notificação de sucesso
+        if: success()
+        run: |
+          echo "🎉 ========================================="
+          echo "🎉 ATUALIZAÇÃO IBAMA CONCLUÍDA COM SUCESSO"
+          echo "🎉 ========================================="
+          echo "📅 Data/Hora: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "🏃 Execução: #${{ github.run_number }}"
+          echo "📊 Dados atualizados no Supabase"
+          echo "🔗 Dashboard: https://ibamadashboard.streamlit.app"
+          
+      - name: ❌ Debug de falha  
+        if: failure()
+        run: |
+          echo "💥 ==============================="
+          echo "💥 FALHA NA ATUALIZAÇÃO DOS DADOS"
+          echo "💥 ==============================="
+          echo "📅 Falha em: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "🏃 Execução: #${{ github.run_number }}"
+          echo ""
+          echo "🔍 Possíveis causas:"
+          echo "   • Incompatibilidade de schema entre CSV e Supabase"
+          echo "   • Problema de conectividade com IBAMA"
+          echo "   • Limite de API do Supabase atingido"
+          echo "   • Dados corrompidos no arquivo ZIP"
+          echo ""
+          echo "🛠️ Para investigar:"
+          echo "   1. Verifique os logs em 'Actions > Artifacts'"
+          echo "   2. Execute o workflow em modo debug"
+          echo "   3. Verifique o schema da tabela Supabase"
+          echo ""
+          echo "📧 Se o problema persistir, verifique:"
+          echo "   • Schema das colunas no Supabase"
+          echo "   • Limites de rate limiting"
+          echo "   • Conectividade com dadosabertos.ibama.gov.br"
